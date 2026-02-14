@@ -6,7 +6,24 @@
 // Game Inventory Management System using Singly Linked List
 // CSD2183 Data Structures - Assignment 1
 // TUT-T3 Group 01
+//
+// Description:
+//   A console-based inventory manager for a game. Items are
+//   stored in a Singly Linked List. Supports adding, removing,
+//   searching, updating and sorting items via Merge Sort.
+//
+// Menu options:
+//   1 - Display all items in the inventory
+//   2 - Add a new item (name, rarity, value, quantity)
+//   3 - Remove an item by its ID
+//   4 - Search for an item by name
+//   5 - Update the quantity of an item by its ID
+//   6 - Sort inventory (by name, value, rarity, or quantity)
+//   7 - Exit the program
+//
+// The inventory comes pre-loaded with 6 sample items.
 // ============================================================
+
 
 // Enum for item rarity
 enum class Rarity { COMMON, UNCOMMON, RARE, EPIC, LEGENDARY };
@@ -107,6 +124,9 @@ private:
                 break;
             case 2: // rarity (ascending rank)
                 aFirst = (rarityRank(a->rarity) <= rarityRank(b->rarity));
+                break;
+            case 3: // quantity (ascending)
+                aFirst = (a->quantity <= b->quantity);
                 break;
         }
 
@@ -228,6 +248,7 @@ public:
             case 0: criteria = "Name";   break;
             case 1: criteria = "Value";  break;
             case 2: criteria = "Rarity"; break;
+            case 3: criteria = "Quantity"; break;
         }
         std::cout << "Inventory sorted by " << criteria << ".\n";
     }
@@ -370,9 +391,9 @@ int main() {
         }
 
         case 6: {
-            std::cout << "Sort by: 0=Name, 1=Value, 2=Rarity\n";
+            std::cout << "Sort by: 0=Name, 1=Value, 2=Rarity, 3=Quantity\n";
             int mode = getIntInput("Choice: ");
-            if (mode >= 0 && mode <= 2) {
+            if (mode >= 0 && mode <= 3) {
                 inv.sortInventory(mode);
                 inv.displayInventory();
             } else {
