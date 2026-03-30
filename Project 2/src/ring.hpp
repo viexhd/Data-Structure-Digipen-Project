@@ -1,16 +1,18 @@
 #pragma once
 #include <cstddef>
 #include <memory>
+#include <vector>
 
 // A vertex node in a doubly-linked circular list representing one ring.
 struct Vertex {
     double x, y;
     int    original_id;   // vertex_id from input CSV (for reference)
+    bool   removed;       // tombstone: set true when unlinked, deferred delete
     Vertex* prev;
     Vertex* next;
 
     Vertex(double x, double y, int id = -1)
-        : x(x), y(y), original_id(id), prev(nullptr), next(nullptr) {}
+        : x(x), y(y), original_id(id), removed(false), prev(nullptr), next(nullptr) {}
 };
 
 // One ring (exterior or interior) stored as a circular doubly-linked list.
@@ -21,8 +23,8 @@ public:
     size_t size;   // current vertex count
     Vertex* head;  // arbitrary entry point into the circle
 
-    explicit Ring(int id) : ring_id(id), size(0), head(nullptr) {}
-    ~Ring() { clear(); }
+    explicit Ring(int id) : ring_id(id), size(0), head(nullptr), garbage() {}
+    ~Ring() { flush_garbage(); clear(); }
 
     // Non-copyable (owns raw pointers)
     Ring(const Ring&)            = delete;
@@ -45,16 +47,25 @@ public:
         ++size;
     }
 
-    // Remove vertex v from the ring. Returns the next vertex (for iteration).
+    // Unlink vertex v from the ring and mark it removed (tombstone).
+    // Does NOT free memory — deferred to allow safe stale-candidate checks.
+    // Returns the next vertex (for iteration).
     // Caller must ensure size >= 3 after removal to keep ring valid.
     Vertex* remove(Vertex* v) {
         Vertex* nxt = v->next;
         v->prev->next = v->next;
         v->next->prev = v->prev;
         if (head == v) head = nxt;
-        delete v;
+        v->removed = true;
         --size;
+        garbage.push_back(v);  // deferred delete
         return nxt;
+    }
+
+    // Free all tombstoned vertices accumulated since last flush.
+    void flush_garbage() {
+        for (Vertex* v : garbage) delete v;
+        garbage.clear();
     }
 
     // Insert a new vertex with coordinates (x,y) between prev_v and prev_v->next.
@@ -71,6 +82,8 @@ public:
     }
 
 private:
+    std::vector<Vertex*> garbage;  // tombstoned vertices awaiting deletion
+
     void clear() {
         if (!head) return;
         Vertex* cur = head->next;

@@ -1,6 +1,7 @@
 #include "geometry.hpp"
 #include <cassert>
-#include <limits>
+#include <cmath>
+#include <algorithm>
 
 // ---- Area ------------------------------------------------------------------
 
@@ -9,99 +10,185 @@ double signed_area(const Ring& ring) {
     double area = 0.0;
     const Vertex* v = ring.head;
     do {
-        // Shoelace: sum of (x_i * y_{i+1} - x_{i+1} * y_i)
         area += v->x * v->next->y - v->next->x * v->y;
         v = v->next;
     } while (v != ring.head);
     return area * 0.5;
 }
 
-// ---- APSC geometry ---------------------------------------------------------
+// ---- Internal helpers ------------------------------------------------------
 
-// Kronenfeld et al. (2020) Section 3:
-// When collapsing A→B→C→D to A→E→D, the signed-area contribution of those
-// four edges to the shoelace sum changes.  E must satisfy:
+// Signed cross product of vectors (D-A) and (P-A).
+// Positive => P is to the LEFT of the directed line A→D.
+// Negative => P is to the RIGHT.
+static double cross_AD_AP(Vec2 A, Vec2 D, Vec2 P) {
+    return (D.x - A.x) * (P.y - A.y) - (D.y - A.y) * (P.x - A.x);
+}
+
+// Intersection of the line  a*x + b*y + c = 0  with the infinite line through P1 and P2.
+// Returns the intersection point. If lines are parallel, projects the midpoint of P1P2
+// onto E* (fallback — should rarely trigger for valid input).
+static Vec2 intersect_Estar_with_line(double a, double b, double c, Vec2 P1, Vec2 P2) {
+    double dx    = P2.x - P1.x;
+    double dy    = P2.y - P1.y;
+    double denom = a * dx + b * dy;
+    if (std::abs(denom) < 1e-15) {
+        // Lines are parallel: project midpoint onto E*
+        Vec2   mid = {(P1.x + P2.x) * 0.5, (P1.y + P2.y) * 0.5};
+        double n2  = a * a + b * b;
+        double val = a * mid.x + b * mid.y + c;
+        return {mid.x - a * val / n2, mid.y - b * val / n2};
+    }
+    double t = -(a * P1.x + b * P1.y + c) / denom;
+    return {P1.x + t * dx, P1.y + t * dy};
+}
+
+// ---- compute_E -------------------------------------------------------------
+
+// Implements the APSC placement function from Kronenfeld et al. (2020), Section 3.
 //
-//   Shoelace(A,E,D) = Shoelace(A,B,C,D)
+// Derivation:
+//   The area-preserving constraint (eq. 1b) defines a line E*:
+//     a*xE + b*yE + c = 0
+//   where
+//     a = yD - yA
+//     b = xA - xD
+//     c = -yB*xA + (yA-yC)*xB + (yB-yD)*xC + yC*xD
 //
-// where Shoelace(A,B,C,D) = 0.5*(Ax*By - Bx*Ay + Bx*Cy - Cx*By + Cx*Dy - Dx*Cy)
-// and   Shoelace(A,E,D)   = 0.5*(Ax*Ey - Ex*Ay + Ex*Dy - Dx*Ey)
-//                         = 0.5*(Ey*(Ax-Dx) + Ex*(Dy-Ay))
+//   E* is parallel to AD.  Any E on E* exactly preserves the ring's signed area.
 //
-// This gives one linear constraint on (Ex, Ey). E is free to slide along the
-// iso-area line; among all valid E, we pick the one that minimises areal
-// displacement (the area enclosed between A→B→C→D and A→E→D).
-//
-// The minimising E is the foot of the perpendicular from the centroid of the
-// removed triangle(s) projected onto the constraint line.  See Kronenfeld
-// eq. (7)-(9) for the full derivation.
-//
-// TODO: implement the closed-form from the paper once you have read Section 3.
+//   Among all points on E*, the one that minimises areal displacement is:
+//     - If B and C are on the SAME side of AD:
+//         take the intersection of E* with AB (if B is farther from AD),
+//         or with CD (if C is farther from AD).
+//     - If B and C are on OPPOSITE sides of AD:
+//         take the intersection of E* with AB (if B is on the same side as E*),
+//         or with CD otherwise.
+//   (Kronenfeld et al. 2020, Section 3, Figures 3-4 and the placement pseudo-code.)
 Vec2 compute_E(Vec2 A, Vec2 B, Vec2 C, Vec2 D) {
-    // Signed area that A→B→C→D contributes to shoelace (without the 0.5 factor)
-    double S_orig = A.x * B.y - B.x * A.y
-                  + B.x * C.y - C.x * B.y
-                  + C.x * D.y - D.x * C.y;
+    // --- Compute E* line: a*x + b*y + c = 0 ---
+    double a =  D.y - A.y;
+    double b =  A.x - D.x;
+    double c = -B.y * A.x
+             + (A.y - C.y) * B.x
+             + (B.y - D.y) * C.x
+             +  C.y * D.x;
 
-    // Constraint line direction: normal to (D-A) gives the iso-area direction
-    Vec2 AD  = {D.x - A.x, D.y - A.y};
-    double ad_len2 = len2(AD);
-
-    // Centroid of the quadrilateral A,B,C,D as a starting guess for E
-    Vec2 centroid = {(A.x + B.x + C.x + D.x) / 4.0,
-                     (A.y + B.y + C.y + D.y) / 4.0};
-
-    // Project centroid onto the constraint line passing through the midpoint of AD
-    // that satisfies the area equation.
-    // The constraint is: Ey*(Ax-Dx) + Ex*(Dy-Ay) = S_orig
-    // Parametrise E = midpoint(A,D) + t*(AD_perp)  and solve for the correct offset.
-    // TODO: replace with the exact Kronenfeld formula from Section 3 of the paper.
-    Vec2 mid = {(A.x + D.x) * 0.5, (A.y + D.y) * 0.5};
-
-    if (ad_len2 < 1e-18) {
-        // A and D coincide — degenerate; return centroid of B,C
+    // Degenerate: A == D (zero-length base)
+    double ad2 = (D.x - A.x) * (D.x - A.x) + (D.y - A.y) * (D.y - A.y);
+    if (ad2 < 1e-18) {
         return {(B.x + C.x) * 0.5, (B.y + C.y) * 0.5};
     }
 
-    // Area equation evaluated at mid:
-    double S_mid = A.x * mid.y - mid.x * A.y
-                 + mid.x * D.y - D.x * mid.y;
-    double delta_S = S_orig - S_mid;
+    // Degenerate: E* coincides with line AD (every point on AD preserves area)
+    // Detected by checking that A lies on E*.
+    double val_A = a * A.x + b * A.y + c;
+    double scale = std::abs(a) + std::abs(b) + 1.0;
+    if (std::abs(val_A) < 1e-10 * scale) {
+        // Any point on AD is optimal; return midpoint.
+        return {(A.x + D.x) * 0.5, (A.y + D.y) * 0.5};
+    }
 
-    // AD perpendicular (rotated 90°)
-    Vec2 AD_perp = {-AD.y, AD.x};
-    // How far along perp do we need to shift mid to satisfy the area constraint?
-    // dS/dt = cross(A, AD_perp) - cross(D, AD_perp) ... derive carefully
-    // For now, use a simplified closed-form placeholder:
-    double dS_dt = A.x * AD_perp.y - AD_perp.x * A.y
-                 + AD_perp.x * D.y - D.x * AD_perp.y;
+    // --- Signed cross products (proportional to perpendicular distance) ---
+    double crossB = cross_AD_AP(A, D, B);   // > 0 => B left of AD
+    double crossC = cross_AD_AP(A, D, C);   // > 0 => C left of AD
 
-    double t = (std::abs(dS_dt) > 1e-18) ? delta_S / dS_dt : 0.0;
-    (void)centroid; // suppress warning until TODO is resolved
-    return {mid.x + t * AD_perp.x, mid.y + t * AD_perp.y};
+    bool   same_side = (crossB * crossC >= 0.0);
+    bool   use_AB;   // true => intersect E* with line AB; false => with line CD
+
+    if (same_side) {
+        // Compare distances (|cross| is proportional to distance from AD)
+        use_AB = (std::abs(crossB) >= std::abs(crossC));
+    } else {
+        // Opposite sides: compare side of B with side of E* relative to AD.
+        // Pick any point on E* to determine its side.
+        Vec2 Estar_pt;
+        if (std::abs(b) >= std::abs(a)) {
+            // b != 0: set x=0, y = -c/b
+            Estar_pt = {0.0, -c / b};
+        } else {
+            // a != 0: set y=0, x = -c/a
+            Estar_pt = {-c / a, 0.0};
+        }
+        double crossEstar = cross_AD_AP(A, D, Estar_pt);
+        use_AB = ((crossB >= 0.0) == (crossEstar >= 0.0));
+    }
+
+    if (use_AB) {
+        return intersect_Estar_with_line(a, b, c, A, B);
+    } else {
+        return intersect_Estar_with_line(a, b, c, C, D);
+    }
 }
 
+// ---- areal_displacement ----------------------------------------------------
+
+// Signed area of triangle P1, P2, P3 (positive if CCW).
+static double tri_area(Vec2 P1, Vec2 P2, Vec2 P3) {
+    return 0.5 * ((P2.x - P1.x) * (P3.y - P1.y)
+                - (P3.x - P1.x) * (P2.y - P1.y));
+}
+
+// Compute the parameter t in [0,1] where segment P1→P2 intersects segment P3→P4.
+// Returns true and sets t, s if they intersect (including endpoints).
+static bool seg_intersect_params(Vec2 P1, Vec2 P2, Vec2 P3, Vec2 P4,
+                                  double& t, double& s) {
+    double dx12 = P2.x - P1.x, dy12 = P2.y - P1.y;
+    double dx34 = P4.x - P3.x, dy34 = P4.y - P3.y;
+    double denom = dx12 * dy34 - dy12 * dx34;
+    if (std::abs(denom) < 1e-15) return false;
+    double dx13 = P3.x - P1.x, dy13 = P3.y - P1.y;
+    t = (dx13 * dy34 - dy13 * dx34) / denom;
+    s = (dx13 * dy12 - dy13 * dx12) / denom;
+    const double eps = 1e-9;
+    return (t >= -eps && t <= 1.0 + eps && s >= -eps && s <= 1.0 + eps);
+}
+
+// Total (unsigned) area enclosed between paths A→B→C→D and A→E→D.
+//
+// Area preservation guarantees L = R (left and right displacement areas are equal).
+// The total displacement = L + R = 2L.
+//
+// We find the single intersection point I where the new path A→E→D crosses the
+// old inner edge B→C (or A→E crosses B→C), split the region there, and sum the
+// absolute areas of the two sub-regions.
+//
+// Verification against the assignment example:
+//   A=(0.6,-0.2) B=(1.0,0.2) C=(1.2,0.2) D=(1.4,-0.2) E=(1.1,0.3)
+//   I=(1.16, 0.2): E→D crosses B→C at t≈0.8, s≈0.8
+//   Region 1 area(A,B,I,E) = 0.008, Region 2 area(I,C,D,E) = 0.008
+//   Total = 0.016  ✓  (matches expected output)
 double areal_displacement(Vec2 A, Vec2 B, Vec2 C, Vec2 D, Vec2 E) {
-    // Areal displacement = |area enclosed between A→B→C→D and A→E→D|
-    // = |signed_area(A,B,C,D) - signed_area(A,E,D)|  ... but these are equal by construction.
-    // Instead, compute the actual enclosed area using the shoelace on the combined polygon.
-    // Split into two triangles: A-B-E and C-D-E (depending on which side E falls).
-    // A cleaner decomposition: the enclosed region is polygon A,B,C,E  +/-  A,C,D,E
-    // TODO: verify this against the paper definition.
-    double area_ABCE = std::abs(
-          A.x*(B.y - E.y) + B.x*(C.y - A.y) + C.x*(E.y - B.y) + E.x*(A.y - C.y)
-    ) * 0.5;
-    double area_ACDE = std::abs(
-          A.x*(C.y - E.y) + C.x*(D.y - A.y) + D.x*(E.y - C.y) + E.x*(A.y - D.y)
-    ) * 0.5;
-    // The symmetric difference of the two paths shares vertex A and D;
-    // total displacement is the area swept between them.
-    return area_ABCE + area_ACDE;
+    double t, s;
+
+    // Case 1: new edge E→D crosses old inner edge B→C
+    if (seg_intersect_params(E, D, B, C, t, s)) {
+        Vec2 I = {E.x + t * (D.x - E.x), E.y + t * (D.y - E.y)};
+        double a1 = tri_area(A, B, I) + tri_area(A, I, E);
+        double a2 = tri_area(I, C, D) + tri_area(I, D, E);
+        return std::abs(a1) + std::abs(a2);
+    }
+
+    // Case 2: new edge A→E crosses old inner edge B→C
+    if (seg_intersect_params(A, E, B, C, t, s)) {
+        Vec2 I = {A.x + t * (E.x - A.x), A.y + t * (E.y - A.y)};
+        double a1 = std::abs(tri_area(A, B, I));
+        double a2 = std::abs(tri_area(I, C, D) + tri_area(I, D, E));
+        return a1 + a2;
+    }
+
+    // No crossing with B→C: polygon A,B,C,D,E is simple — use shoelace directly.
+    double area = (A.x * B.y - B.x * A.y)
+                + (B.x * C.y - C.x * B.y)
+                + (C.x * D.y - D.x * C.y)
+                + (D.x * E.y - E.x * D.y)
+                + (E.x * A.y - A.x * E.y);
+    return std::abs(area) * 0.5;
 }
 
 // ---- Intersection checks ---------------------------------------------------
 
-// Standard CCW test
+// CCW sign for three points.
 static double ccw(Vec2 A, Vec2 B, Vec2 C) {
     return (B.x - A.x) * (C.y - A.y) - (B.y - A.y) * (C.x - A.x);
 }
@@ -115,20 +202,16 @@ bool segments_intersect(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4) {
     if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
         ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)))
         return true;
-
-    // Collinear overlap cases (treat as non-intersecting for robustness)
     return false;
 }
 
 bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* D, Vec2 E) {
-    // The two new edges introduced are A→E and E→D.
     Vec2 vA = {A->x, A->y};
     Vec2 vD = {D->x, D->y};
 
     const Vertex* u = ring.head;
     do {
         const Vertex* w = u->next;
-        // Skip edges that share an endpoint with the new edges
         if (u == A || u == D || w == A || w == D) {
             u = w;
             continue;

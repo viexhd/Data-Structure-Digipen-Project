@@ -1,7 +1,6 @@
 #pragma once
 #include "ring.hpp"
 #include <cmath>
-#include <utility>
 
 // ---- Basic 2D vector helpers -----------------------------------------------
 
@@ -15,30 +14,31 @@ inline double len2(Vec2 a)            { return dot(a, a); }
 // ---- Area ------------------------------------------------------------------
 
 // Signed area of a ring via the shoelace formula.
-// Positive for CCW (exterior), negative for CW (interior/hole).
+// Positive for CCW (exterior ring), negative for CW (interior/hole).
 double signed_area(const Ring& ring);
 
-// ---- APSC geometry ---------------------------------------------------------
+// ---- APSC geometry (Kronenfeld et al. 2020, Section 3) ---------------------
 
-// Given four consecutive vertices A, B, C, D (in ring order):
-// Compute the position of replacement vertex E such that:
-//   - removing B and C and inserting E preserves the signed area of the ring
-//   - the areal displacement is minimised
-// Returns E as a Vec2.
-// Reference: Kronenfeld et al. (2020), Section 3.
+// Given four consecutive vertices A, B, C, D in a ring, compute the Steiner
+// point E such that:
+//   (a) replacing B,C with E preserves the signed area of the ring exactly, and
+//   (b) the areal displacement is minimised among all area-preserving placements.
+//
+// Implements eq. (1b) and the placement pseudo-code from Kronenfeld et al. (2020).
 Vec2 compute_E(Vec2 A, Vec2 B, Vec2 C, Vec2 D);
 
-// Areal displacement when replacing the sub-chain A→B→C→D with A→E→D.
-// Equals the area enclosed between the two paths (unsigned).
+// Total unsigned area enclosed between path A→B→C→D and the replacement path
+// A→E→D.  Handles the self-intersecting case by splitting at the crossing of
+// the new and old edges.
 double areal_displacement(Vec2 A, Vec2 B, Vec2 C, Vec2 D, Vec2 E);
 
 // ---- Intersection checks ---------------------------------------------------
 
-// Returns true if segment (p1,p2) and segment (p3,p4) properly intersect
-// (share an interior point, not just an endpoint).
+// Returns true if segments (p1,p2) and (p3,p4) properly intersect
+// (share an interior point, excluding shared endpoints).
 bool segments_intersect(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4);
 
-// Returns true if inserting E between A and D (replacing B,C) would cause
-// any edge of the ring to cross any other edge (topology check).
-// This is a naive O(n) scan — replace with spatial index for large inputs.
+// Returns true if inserting E between A and D (replacing B and C) would cause
+// any edge in the ring to cross either new edge A→E or E→D.
+// This is an O(n) scan.  Replace with a spatial index for large inputs (Person 3).
 bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* D, Vec2 E);
