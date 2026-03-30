@@ -284,7 +284,7 @@ static bool ring_contains_point(const Ring& ring, Vec2 p) {
     if (!ring.head || ring.size == 0) return false;
     const Vertex* v = ring.head;
     do {
-        if (point_eq({v->x, v->y}, p)) return true;
+        if (!v->removed && point_eq({v->x, v->y}, p)) return true;
         v = v->next;
     } while (v != ring.head);
     return false;
@@ -294,44 +294,20 @@ bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* B, Vertex
     Vec2 vA = {A->x, A->y};
     Vec2 vD = {D->x, D->y};
 
-    if (point_eq(vA, E) || point_eq(vD, E)) return true;
-    if (!point_eq(vA, E) && !point_eq(vD, E) && ring_contains_point(ring, E)) return true;
-
-    if (grid) {
-        // Use spatial index: query segments near both new edges
-        std::vector<Segment> candidates;
-        double ax0 = std::min({vA.x, E.x, vD.x}), ay0 = std::min({vA.y, E.y, vD.y});
-        double ax1 = std::max({vA.x, E.x, vD.x}), ay1 = std::max({vA.y, E.y, vD.y});
-        grid->query(ax0, ay0, ax1, ay1, candidates);
-
-        std::unordered_set<Vertex*> seen;
-        for (const auto& seg : candidates) {
-            Vertex* u = seg.start;
-            if (!seen.insert(u).second) continue;
-            if (u == A || u == B || u == C) continue;
-            Vertex* w = u->next;
-            if (w == B || w == C) continue;
-            if (seg.ring_id != ring.ring_id) continue;
-            Vec2 pu = {u->x, u->y};
-            Vec2 pw = {w->x, w->y};
-            if (segments_intersect_nontrivial(vA, E, pu, pw, true)) return true;
-            if (segments_intersect_nontrivial(E, vD, pu, pw, true)) return true;
-        }
-        return false;
-    }
-
-    // Fallback: O(n) scan
+    // Skip all four vertices around the collapse (A, B, C, D) to avoid spurious
+    // hits on the edges immediately adjacent to the collapsing sub-chain.
     const Vertex* u = ring.head;
     do {
         const Vertex* w = u->next;
-        if (u == B || u == C || w == B || w == C) {
+        if (u == A || u == B || u == C || u == D ||
+            w == A || w == B || w == C || w == D) {
             u = w;
             continue;
         }
         Vec2 pu = {u->x, u->y};
         Vec2 pw = {w->x, w->y};
-        if (segments_intersect_nontrivial(vA, E, pu, pw, true)) return true;
-        if (segments_intersect_nontrivial(E, vD, pu, pw, true)) return true;
+        if (segments_intersect(vA, E, pu, pw)) return true;
+        if (segments_intersect(E, vD, pu, pw)) return true;
         u = w;
     } while (u != ring.head);
     return false;
