@@ -1,0 +1,86 @@
+#pragma once
+#include <cstddef>
+#include <memory>
+
+// A vertex node in a doubly-linked circular list representing one ring.
+struct Vertex {
+    double x, y;
+    int    original_id;   // vertex_id from input CSV (for reference)
+    Vertex* prev;
+    Vertex* next;
+
+    Vertex(double x, double y, int id = -1)
+        : x(x), y(y), original_id(id), prev(nullptr), next(nullptr) {}
+};
+
+// One ring (exterior or interior) stored as a circular doubly-linked list.
+// Ownership: Ring owns all its Vertex nodes (allocated/freed here).
+class Ring {
+public:
+    int    ring_id;
+    size_t size;   // current vertex count
+    Vertex* head;  // arbitrary entry point into the circle
+
+    explicit Ring(int id) : ring_id(id), size(0), head(nullptr) {}
+    ~Ring() { clear(); }
+
+    // Non-copyable (owns raw pointers)
+    Ring(const Ring&)            = delete;
+    Ring& operator=(const Ring&) = delete;
+
+    // Append a vertex to the end of the ring (before head, maintaining circularity).
+    void push_back(double x, double y, int vid = -1) {
+        Vertex* v = new Vertex(x, y, vid);
+        if (!head) {
+            v->prev = v;
+            v->next = v;
+            head = v;
+        } else {
+            Vertex* tail = head->prev;
+            tail->next = v;
+            v->prev    = tail;
+            v->next    = head;
+            head->prev = v;
+        }
+        ++size;
+    }
+
+    // Remove vertex v from the ring. Returns the next vertex (for iteration).
+    // Caller must ensure size >= 3 after removal to keep ring valid.
+    Vertex* remove(Vertex* v) {
+        Vertex* nxt = v->next;
+        v->prev->next = v->next;
+        v->next->prev = v->prev;
+        if (head == v) head = nxt;
+        delete v;
+        --size;
+        return nxt;
+    }
+
+    // Insert a new vertex with coordinates (x,y) between prev_v and prev_v->next.
+    // Returns the newly inserted vertex.
+    Vertex* insert_after(Vertex* prev_v, double x, double y) {
+        Vertex* v   = new Vertex(x, y);
+        Vertex* nxt = prev_v->next;
+        prev_v->next = v;
+        v->prev      = prev_v;
+        v->next      = nxt;
+        nxt->prev    = v;
+        ++size;
+        return v;
+    }
+
+private:
+    void clear() {
+        if (!head) return;
+        Vertex* cur = head->next;
+        while (cur != head) {
+            Vertex* nxt = cur->next;
+            delete cur;
+            cur = nxt;
+        }
+        delete head;
+        head = nullptr;
+        size = 0;
+    }
+};
