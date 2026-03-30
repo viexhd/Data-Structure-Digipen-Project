@@ -52,9 +52,11 @@ double simplify(Polygon& poly, size_t target_n) {
     for (auto& ring : poly.rings)
         enqueue_ring(pq, *ring);
 
-    // Build spatial index for O(sqrt(n)) intersection queries
+#ifndef USE_NAIVE
+    // Build spatial index for O(sqrt(n)) average-case intersection queries
     SpatialGrid grid;
     grid.build(poly);
+#endif
 
     while (poly.total_vertices() > target_n && !pq.empty()) {
         Candidate c = pq.top();
@@ -66,20 +68,28 @@ double simplify(Polygon& poly, size_t target_n) {
         if (ring->size < 4) continue;
 
         Vec2 E{c.Ex, c.Ey};
+#ifndef USE_NAIVE
         if (collapse_causes_cross_ring_intersection(poly, c.ring_id, c.A, c.B, c.C, c.D, E, &grid)) continue;
+#else
+        if (collapse_causes_cross_ring_intersection(poly, c.ring_id, c.A, c.B, c.C, c.D, E)) continue;
+#endif
 
+#ifndef USE_NAIVE
         // Update grid: remove old edges before modifying the ring
         grid.remove(c.A);  // old edge A->B
         grid.remove(c.B);  // old edge B->C
         grid.remove(c.C);  // old edge C->D
+#endif
 
         ring->remove(c.B);
         ring->remove(c.C);
         Vertex* E_vtx = ring->insert_after(c.A, c.Ex, c.Ey);
 
+#ifndef USE_NAIVE
         // Update grid: insert new edges after ring modification
         grid.insert(c.A, ring->ring_id);    // new edge A->E
         grid.insert(E_vtx, ring->ring_id);  // new edge E->D
+#endif
 
         total_displacement += c.displacement;
 

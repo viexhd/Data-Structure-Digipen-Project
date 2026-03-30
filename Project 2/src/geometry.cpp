@@ -5,7 +5,6 @@
 #include <cmath>
 #include <algorithm>
 #include <vector>
-#include <unordered_set>
 
 // ---- Area ------------------------------------------------------------------
 
@@ -294,8 +293,25 @@ bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* B, Vertex
     Vec2 vA = {A->x, A->y};
     Vec2 vD = {D->x, D->y};
 
-    // Skip all four vertices around the collapse (A, B, C, D) to avoid spurious
-    // hits on the edges immediately adjacent to the collapsing sub-chain.
+    if (grid) {
+        double ax0 = std::min({vA.x, E.x, vD.x}), ay0 = std::min({vA.y, E.y, vD.y});
+        double ax1 = std::max({vA.x, E.x, vD.x}), ay1 = std::max({vA.y, E.y, vD.y});
+        bool found = false;
+        grid->query(ax0, ay0, ax1, ay1, [&](Vertex* u, int rid) {
+            if (found) return;
+            if (rid != ring.ring_id) return;
+            if (u == A || u == B || u == C || u == D) return;
+            Vertex* w = u->next;
+            if (w == A || w == B || w == C || w == D) return;
+            Vec2 pu = {u->x, u->y};
+            Vec2 pw = {w->x, w->y};
+            if (segments_intersect(vA, E, pu, pw)) { found = true; return; }
+            if (segments_intersect(E, vD, pu, pw)) { found = true; return; }
+        });
+        return found;
+    }
+
+    // Fallback: O(n) scan
     const Vertex* u = ring.head;
     do {
         const Vertex* w = u->next;
@@ -321,7 +337,6 @@ bool collapse_causes_cross_ring_intersection(const Polygon& poly, int ring_id, V
     Vec2 vD = {D->x, D->y};
 
     if (grid) {
-        // Use spatial index for cross-ring checks
         for (size_t j = 0; j < poly.rings.size(); ++j) {
             if (static_cast<int>(j) == ring_id) continue;
             const Ring& other = *poly.rings[j];
@@ -329,23 +344,19 @@ bool collapse_causes_cross_ring_intersection(const Polygon& poly, int ring_id, V
             if (ring_contains_point(other, E)) return true;
         }
 
-        std::vector<Segment> candidates;
         double ax0 = std::min({vA.x, E.x, vD.x}), ay0 = std::min({vA.y, E.y, vD.y});
         double ax1 = std::max({vA.x, E.x, vD.x}), ay1 = std::max({vA.y, E.y, vD.y});
-        grid->query(ax0, ay0, ax1, ay1, candidates);
-
-        std::unordered_set<Vertex*> seen;
-        for (const auto& seg : candidates) {
-            if (seg.ring_id == ring_id) continue;
-            Vertex* u = seg.start;
-            if (!seen.insert(u).second) continue;
+        bool found = false;
+        grid->query(ax0, ay0, ax1, ay1, [&](Vertex* u, int rid) {
+            if (found) return;
+            if (rid == ring_id) return;
             Vertex* w = u->next;
             Vec2 pu = {u->x, u->y};
             Vec2 pw = {w->x, w->y};
-            if (segments_intersect_nontrivial(vA, E, pu, pw, false)) return true;
-            if (segments_intersect_nontrivial(E, vD, pu, pw, false)) return true;
-        }
-        return false;
+            if (segments_intersect_nontrivial(vA, E, pu, pw, false)) { found = true; return; }
+            if (segments_intersect_nontrivial(E, vD, pu, pw, false)) { found = true; return; }
+        });
+        return found;
     }
 
     // Fallback: O(n) scan across all other rings
