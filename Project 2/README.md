@@ -101,43 +101,6 @@ Implements the **Area-Preserving Segment Collapse (APSC)** algorithm from:
 
 ### Performance
 
-The spatial grid index divides the polygon's bounding box into sqrt(n) x sqrt(n) cells. Each intersection query only checks segments in overlapping cells, reducing per-collapse cost from O(n) to O(sqrt(n)) average-case. Epoch-based deduplication on each Vertex avoids per-query heap allocations.
+The spatial grid index divides the polygon's bounding box into sqrt(n) x sqrt(n) cells. Each intersection query only checks segments in overlapping cells, reducing per-collapse cost from O(n) to O(sqrt(n)) average-case.
 
-Timing and peak memory are printed to stderr (e.g., `Simplification: 5000 vertices, 770.5 ms, peak RSS: 16740 KB`).
-
-To benchmark without the spatial grid (naive O(n) scan), build with:
-```bash
-make CXXFLAGS="-std=c++17 -Wall -Wextra -O2 -DNDEBUG -DUSE_NAIVE"
-```
-
-#### Benchmark: Grid vs Naive O(n) Scan
-
-All benchmarks run on WSL2 (Ubuntu 24.04), single-threaded, compiled with `-O2 -DNDEBUG`. Target = input/2 vertices. Median of 5 runs (3 runs for 50k+).
-
-| Input | Vertices | Grid time (ms) | Grid mem (MB) | Naive time (ms) | Naive mem (MB) | Speedup |
-|---|---|---|---|---|---|---|
-| bench_1k.csv | 1,000 | 7.4 | 3.8 | 55.0 | 3.8 | 7.4x |
-| bench_5k.csv | 5,000 | 160.5 | 7.6 | 1,342 | 4.6 | 8.4x |
-| bench_10k.csv | 10,000 | 770.5 | 16.7 | 5,469 | 5.6 | 7.1x |
-| bench_10k_5holes.csv | 10,000 (5 holes) | 210 | 8.4 | 4,365 | 5.4 | 20.8x |
-| bench_50k.csv | 50,000 | 53,600 | 237 | 154,096 | 16.8 | 2.9x |
-| bench_100k.csv | 100,000 | 504,564 | 840 | est. ~616,000 | est. ~33 | ~1.2x |
-
-#### Scaling Analysis
-
-**Naive scan:** The O(n) per-collapse intersection check produces O(n^2) total time (n/2 collapses x O(n) each). Fitting the measured data: T_naive ~ c * n^2 with c ~ 5.5e-8. The 5x input increase from 10k to 50k yields ~28x time increase, consistent with n^2.
-
-**Grid-accelerated:** The grid reduces per-collapse cost to O(sqrt(n)) average-case, yielding O(n * sqrt(n)) = O(n^1.5) total. Measured scaling from 1k to 10k fits well: 10x input increase gives ~104x time increase (expected 10^1.5 = 31.6x). At larger sizes the grid's memory overhead grows, and cache effects reduce the speedup.
-
-**Memory:** The grid uses O(n) additional memory for cell arrays (sqrt(n) x sqrt(n) cells, ~1 segment each). At 100k vertices, peak RSS reaches ~840 MB due to cell vector overhead and priority queue growth from lazy deletion.
-
-#### Custom Test Datasets
-
-| Dataset | Vertices | Holes | Property Tested |
-|---|---|---|---|
-| bench_1k.csv | 1,000 | 0 | Baseline small polygon, verifies grid overhead is low |
-| bench_5k.csv | 5,000 | 0 | Medium polygon, tests grid vs naive crossover |
-| bench_10k.csv | 10,000 | 0 | High vertex count, stresses intersection checks |
-| bench_50k.csv | 50,000 | 0 | Large polygon, tests scalability of spatial index |
-| bench_100k.csv | 100,000 | 0 | Very large polygon (>=100k per rubric), tests limits |
-| bench_10k_5holes.csv | 10,000 | 5 | Multi-hole polygon, tests cross-ring intersection checks |
+Timing output is printed to stderr during execution (e.g., `Simplification: 99 vertices, 12.3 ms`).

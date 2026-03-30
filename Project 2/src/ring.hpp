@@ -10,11 +10,9 @@ struct Vertex {
     bool   removed;       // tombstone: set true when unlinked, deferred delete
     Vertex* prev;
     Vertex* next;
-    mutable unsigned long long last_query_epoch;  // for spatial grid deduplication
 
     Vertex(double x, double y, int id = -1)
-        : x(x), y(y), original_id(id), removed(false), prev(nullptr), next(nullptr),
-          last_query_epoch(0) {}
+        : x(x), y(y), original_id(id), removed(false), prev(nullptr), next(nullptr) {}
 };
 
 // One ring (exterior or interior) stored as a circular doubly-linked list.
