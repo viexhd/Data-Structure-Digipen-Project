@@ -22,6 +22,13 @@ double signed_area(const Ring& ring) {
 
 // ---- Internal helpers ------------------------------------------------------
 
+// Signed cross product of vectors (D-A) and (P-A).
+// Positive => P is to the LEFT of the directed line A→D.
+// Negative => P is to the RIGHT.
+static double cross_AD_AP(Vec2 A, Vec2 D, Vec2 P) {
+    return (D.x - A.x) * (P.y - A.y) - (D.y - A.y) * (P.x - A.x);
+}
+
 // Intersection of the line  a*x + b*y + c = 0  with the infinite line through P1 and P2.
 // Returns the intersection point. If lines are parallel, projects the midpoint of P1P2
 // onto E* (fallback — should rarely trigger for valid input).
@@ -86,14 +93,28 @@ Vec2 compute_E(Vec2 A, Vec2 B, Vec2 C, Vec2 D) {
         return {(A.x + D.x) * 0.5, (A.y + D.y) * 0.5};
     }
 
-    Vec2 Eab = intersect_Estar_with_line(a, b, c, A, B);
-    Vec2 Ecd = intersect_Estar_with_line(a, b, c, C, D);
-    double dab = areal_displacement(A, B, C, D, Eab);
-    double dcd = areal_displacement(A, B, C, D, Ecd);
-    const double eps = 1e-12;
-    if (dab < dcd - eps) return Eab;
-    if (dcd < dab - eps) return Ecd;
-    return Eab;
+    double crossB = cross_AD_AP(A, D, B);
+    double crossC = cross_AD_AP(A, D, C);
+
+    bool same_side = (crossB * crossC >= 0.0);
+    bool use_AB;
+
+    if (same_side) {
+        use_AB = (std::abs(crossB) >= std::abs(crossC));
+    } else {
+        Vec2 Estar_pt;
+        if (std::abs(b) >= std::abs(a)) {
+            Estar_pt = {0.0, -c / b};
+        } else {
+            Estar_pt = {-c / a, 0.0};
+        }
+        double crossEstar = cross_AD_AP(A, D, Estar_pt);
+        use_AB = ((crossB >= 0.0) == (crossEstar >= 0.0));
+    }
+
+    return use_AB
+        ? intersect_Estar_with_line(a, b, c, A, B)
+        : intersect_Estar_with_line(a, b, c, C, D);
 }
 
 // ---- areal_displacement ----------------------------------------------------
@@ -294,20 +315,55 @@ bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* B, Vertex
     Vec2 vA = {A->x, A->y};
     Vec2 vD = {D->x, D->y};
 
-    // Skip all four vertices around the collapse (A, B, C, D) to avoid spurious
-    // hits on the edges immediately adjacent to the collapsing sub-chain.
+    if (point_eq(vA, E) || point_eq(vD, E)) return true;
+    if (grid) {
+        std::vector<Segment> near;
+        grid->query(E.x, E.y, E.x, E.y, near);
+        for (const auto& seg : near) {
+            if (seg.ring_id != ring.ring_id) continue;
+            Vertex* u = seg.start;
+            Vertex* w = u->next;
+            Vec2 pu = {u->x, u->y};
+            Vec2 pw = {w->x, w->y};
+            if ((point_eq(pu, E) && u != A && u != D) || (point_eq(pw, E) && w != A && w != D)) return true;
+        }
+    } else {
+        if (!point_eq(vA, E) && !point_eq(vD, E) && ring_contains_point(ring, E)) return true;
+    }
+
+    if (grid) {
+        std::vector<Segment> candidates;
+        double ax0 = std::min({vA.x, E.x, vD.x}), ay0 = std::min({vA.y, E.y, vD.y});
+        double ax1 = std::max({vA.x, E.x, vD.x}), ay1 = std::max({vA.y, E.y, vD.y});
+        grid->query(ax0, ay0, ax1, ay1, candidates);
+
+        std::unordered_set<Vertex*> seen;
+        for (const auto& seg : candidates) {
+            if (seg.ring_id != ring.ring_id) continue;
+            Vertex* u = seg.start;
+            if (!seen.insert(u).second) continue;
+            Vertex* w = u->next;
+            if (u == B || u == C || w == B || w == C) continue;
+            if (u == A || u == D || w == A || w == D) continue;
+            Vec2 pu = {u->x, u->y};
+            Vec2 pw = {w->x, w->y};
+            if (segments_intersect_nontrivial(vA, E, pu, pw, true)) return true;
+            if (segments_intersect_nontrivial(E, vD, pu, pw, true)) return true;
+        }
+        return false;
+    }
+
     const Vertex* u = ring.head;
     do {
         const Vertex* w = u->next;
-        if (u == A || u == B || u == C || u == D ||
-            w == A || w == B || w == C || w == D) {
+        if (u == B || u == C || w == B || w == C) {
             u = w;
             continue;
         }
         Vec2 pu = {u->x, u->y};
         Vec2 pw = {w->x, w->y};
-        if (segments_intersect(vA, E, pu, pw)) return true;
-        if (segments_intersect(E, vD, pu, pw)) return true;
+        if (segments_intersect_nontrivial(vA, E, pu, pw, true)) return true;
+        if (segments_intersect_nontrivial(E, vD, pu, pw, true)) return true;
         u = w;
     } while (u != ring.head);
     return false;

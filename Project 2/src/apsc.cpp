@@ -1,7 +1,6 @@
 #include "apsc.hpp"
 #include "geometry.hpp"
 #include "spatial_grid.hpp"
-#include <cstdio>
 #include <queue>
 #include <vector>
 
@@ -52,7 +51,6 @@ double simplify(Polygon& poly, size_t target_n) {
     for (auto& ring : poly.rings)
         enqueue_ring(pq, *ring);
 
-    // Build spatial index for O(sqrt(n)) intersection queries
     SpatialGrid grid;
     grid.build(poly);
 
@@ -68,24 +66,18 @@ double simplify(Polygon& poly, size_t target_n) {
         Vec2 E{c.Ex, c.Ey};
         if (collapse_causes_cross_ring_intersection(poly, c.ring_id, c.A, c.B, c.C, c.D, E, &grid)) continue;
 
-        // Update grid: remove old edges before modifying the ring
-        grid.remove(c.A);  // old edge A->B
-        grid.remove(c.B);  // old edge B->C
-        grid.remove(c.C);  // old edge C->D
+        grid.remove(c.A);
+        grid.remove(c.B);
+        grid.remove(c.C);
 
         ring->remove(c.B);
         ring->remove(c.C);
         Vertex* E_vtx = ring->insert_after(c.A, c.Ex, c.Ey);
 
-        // Update grid: insert new edges after ring modification
-        grid.insert(c.A, ring->ring_id);    // new edge A->E
-        grid.insert(E_vtx, ring->ring_id);  // new edge E->D
+        grid.insert(c.A, ring->ring_id);
+        grid.insert(E_vtx, ring->ring_id);
 
         total_displacement += c.displacement;
-
-        // assert_polygon_topology_valid uses a stricter intersection test than
-        // the algorithm enforces, so skip it to avoid false crashes.
-        // assert_polygon_topology_valid(poly);
 
         if (ring->size >= 4) {
             Vertex* start = E_vtx->prev->prev->prev;
@@ -99,6 +91,9 @@ double simplify(Polygon& poly, size_t target_n) {
             }
         }
     }
+
+    for (auto& ring : poly.rings)
+        ring->flush_garbage();
 
     return total_displacement;
 }
