@@ -22,14 +22,8 @@ struct Candidate {
         double diff = displacement - o.displacement;
         if (std::fabs(diff) > eps) return diff > 0.0;
         if (ring_id != o.ring_id) return ring_id > o.ring_id;
-        auto id = [](Vertex* v){ return v ? v->original_id : -1; };
-        int aA = id(A), aB = id(B), aC = id(C), aD = id(D);
-        int bA = id(o.A), bB = id(o.B), bC = id(o.C), bD = id(o.D);
-        if (aA != bA) return aA > bA;
-        if (aB != bB) return aB > bB;
-        if (aC != bC) return aC > bC;
-        if (aD != bD) return aD > bD;
-        return A > o.A;
+        if (std::fabs(Ex - o.Ex) > eps) return Ex > o.Ex;
+        return Ey > o.Ey;
     }
 };
 

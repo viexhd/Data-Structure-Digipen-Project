@@ -282,7 +282,7 @@ static bool ring_contains_point(const Ring& ring, Vec2 p) {
     if (!ring.head || ring.size == 0) return false;
     const Vertex* v = ring.head;
     do {
-        if (point_eq({v->x, v->y}, p)) return true;
+        if (!v->removed && point_eq({v->x, v->y}, p)) return true;
         v = v->next;
     } while (v != ring.head);
     return false;
@@ -292,20 +292,20 @@ bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* B, Vertex
     Vec2 vA = {A->x, A->y};
     Vec2 vD = {D->x, D->y};
 
-    if (point_eq(vA, E) || point_eq(vD, E)) return true;
-    if (!point_eq(vA, E) && !point_eq(vD, E) && ring_contains_point(ring, E)) return true;
-
+    // Skip all four vertices around the collapse (A, B, C, D) to avoid spurious
+    // hits on the edges immediately adjacent to the collapsing sub-chain.
     const Vertex* u = ring.head;
     do {
         const Vertex* w = u->next;
-        if (u == B || u == C || w == B || w == C) {
+        if (u == A || u == B || u == C || u == D ||
+            w == A || w == B || w == C || w == D) {
             u = w;
             continue;
         }
         Vec2 pu = {u->x, u->y};
         Vec2 pw = {w->x, w->y};
-        if (segments_intersect_nontrivial(vA, E, pu, pw, true)) return true;
-        if (segments_intersect_nontrivial(E, vD, pu, pw, true)) return true;
+        if (segments_intersect(vA, E, pu, pw)) return true;
+        if (segments_intersect(E, vD, pu, pw)) return true;
         u = w;
     } while (u != ring.head);
     return false;
