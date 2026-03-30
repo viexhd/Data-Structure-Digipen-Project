@@ -1,0 +1,122 @@
+#include "spatial_grid.hpp"
+#include "polygon.hpp"
+#include <limits>
+#include <cmath>
+
+void SpatialGrid::build(const Polygon& poly)
+{
+    // Compute bounding box across all rings
+    double lo_x =  std::numeric_limits<double>::max();
+    double lo_y =  std::numeric_limits<double>::max();
+    double hi_x = -std::numeric_limits<double>::max();
+    double hi_y = -std::numeric_limits<double>::max();
+    size_t total = 0;
+
+    for (const auto& ring : poly.rings)
+    {
+        if (!ring || !ring->head) continue;
+        const Vertex* v = ring->head;
+        do {
+            if (v->x < lo_x) lo_x = v->x;
+            if (v->x > hi_x) hi_x = v->x;
+            if (v->y < lo_y) lo_y = v->y;
+            if (v->y > hi_y) hi_y = v->y;
+            ++total;
+            v = v->next;
+        } while (v != ring->head);
+    }
+
+    if (total == 0) return;
+
+    const double eps = 1.0;
+    min_x = lo_x - eps;
+    min_y = lo_y - eps;
+    double width  = (hi_x - lo_x) + 2.0 * eps;
+    double height = (hi_y - lo_y) + 2.0 * eps;
+
+    int grid_dim = std::max(1, static_cast<int>(std::sqrt(static_cast<double>(total))));
+    cols = grid_dim;
+    rows = grid_dim;
+    cell_w = width / cols;
+    cell_h = height / rows;
+    if (cell_w < 1e-12) cell_w = 1.0;
+    if (cell_h < 1e-12) cell_h = 1.0;
+
+    cells.clear();
+    cells.resize(static_cast<size_t>(cols) * rows);
+    vertex_to_cells.clear();
+
+    // Insert all edges
+    for (const auto& ring : poly.rings)
+    {
+        if (!ring || !ring->head || ring->size < 2) continue;
+        Vertex* v = ring->head;
+        do {
+            insert(v, ring->ring_id);
+            v = v->next;
+        } while (v != ring->head);
+    }
+}
+
+void SpatialGrid::insert(Vertex* v, int ring_id)
+{
+    Vertex* w = v->next;
+    double x0 = std::min(v->x, w->x);
+    double y0 = std::min(v->y, w->y);
+    double x1 = std::max(v->x, w->x);
+    double y1 = std::max(v->y, w->y);
+
+    int cx0, cy0, cx1, cy1;
+    cell_range(x0, y0, x1, y1, cx0, cy0, cx1, cy1);
+
+    std::vector<int>& indices = vertex_to_cells[v];
+    for (int cy = cy0; cy <= cy1; ++cy)
+    {
+        for (int cx = cx0; cx <= cx1; ++cx)
+        {
+            int idx = cell_index(cx, cy);
+            cells[idx].push_back({v, ring_id});
+            indices.push_back(idx);
+        }
+    }
+}
+
+void SpatialGrid::remove(Vertex* v)
+{
+    auto it = vertex_to_cells.find(v);
+    if (it == vertex_to_cells.end()) return;
+
+    for (int idx : it->second)
+    {
+        auto& cell = cells[idx];
+        for (size_t i = 0; i < cell.size(); ++i)
+        {
+            if (cell[i].start == v)
+            {
+                cell[i] = cell.back();
+                cell.pop_back();
+                break;
+            }
+        }
+    }
+    vertex_to_cells.erase(it);
+}
+
+void SpatialGrid::query(double qx0, double qy0, double qx1, double qy1, std::vector<Segment>& results) const 
+{
+    int cx0, cy0, cx1, cy1;
+    cell_range(qx0, qy0, qx1, qy1, cx0, cy0, cx1, cy1);
+
+    for (int cy = cy0; cy <= cy1; ++cy)
+    {
+        for (int cx = cx0; cx <= cx1; ++cx)
+        {
+            int idx = cell_index(cx, cy);
+            const auto& cell = cells[idx];
+            for (const auto& seg : cell)
+            {
+                results.push_back(seg);
+            }
+        }
+    }
+}

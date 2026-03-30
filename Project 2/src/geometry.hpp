@@ -40,13 +40,15 @@ bool segments_intersect(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4);
 
 bool segments_intersect_nontrivial(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, bool ignore_shared_endpoints);
 
+class SpatialGrid;
+
 // Returns true if inserting E between A and D (replacing B and C) would cause
 // any edge in the ring to cross either new edge A→E or E→D.
-// This is an O(n) scan.  Replace with a spatial index for large inputs (Person 3).
-bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* B, Vertex* C, Vertex* D, Vec2 E);
+// When grid is provided, uses spatial index for O(sqrt(n)) lookup; otherwise O(n) scan.
+bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* B, Vertex* C, Vertex* D, Vec2 E, const SpatialGrid* grid = nullptr);
 
 struct Polygon;
-bool collapse_causes_cross_ring_intersection(const Polygon& poly, int ring_id, Vertex* A, Vertex* B, Vertex* C, Vertex* D, Vec2 E);
+bool collapse_causes_cross_ring_intersection(const Polygon& poly, int ring_id, Vertex* A, Vertex* B, Vertex* C, Vertex* D, Vec2 E, const SpatialGrid* grid = nullptr);
 
 bool polygon_has_any_edge_intersections(const Polygon& poly);
 void assert_polygon_topology_valid(const Polygon& poly);

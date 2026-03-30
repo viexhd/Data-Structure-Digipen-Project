@@ -3,6 +3,7 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <iomanip>
 #include <stdexcept>
 #include <map>
 
@@ -65,12 +66,12 @@ void write_polygon(const Polygon& poly,
                    double area_in,
                    double area_out,
                    double total_displacement) {
+    std::cout << std::setprecision(10) << std::defaultfloat;
     std::cout << "ring_id,vertex_id,x,y\n";
     for (const auto& ring : poly.rings) {
         int vid = 0;
         const Vertex* v = ring->head;
         do {
-            // Use %g-style but with enough precision; match the example output style
             std::cout << ring->ring_id << ',' << vid++ << ','
                       << v->x << ',' << v->y << '\n';
             v = v->next;

@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <chrono>
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {
@@ -77,8 +78,13 @@ int main(int argc, char* argv[]) {
 
     // No simplification needed if already at or below target
     double total_displacement = 0.0;
+    auto t_start = std::chrono::high_resolution_clock::now();
     if (poly.total_vertices() > target_n)
         total_displacement = simplify(poly, target_n);
+    auto t_end = std::chrono::high_resolution_clock::now();
+    double elapsed_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    std::cerr << "Simplification: " << poly.total_vertices() << " vertices, "
+              << elapsed_ms << " ms\n";
 
     // Compute output area
     double area_out = 0.0;

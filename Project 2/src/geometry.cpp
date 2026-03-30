@@ -1,9 +1,11 @@
 #include "geometry.hpp"
 #include "polygon.hpp"
+#include "spatial_grid.hpp"
 #include <cassert>
 #include <cmath>
 #include <algorithm>
 #include <vector>
+#include <unordered_set>
 
 // ---- Area ------------------------------------------------------------------
 
@@ -288,13 +290,37 @@ static bool ring_contains_point(const Ring& ring, Vec2 p) {
     return false;
 }
 
-bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* B, Vertex* C, Vertex* D, Vec2 E) {
+bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* B, Vertex* C, Vertex* D, Vec2 E, const SpatialGrid* grid) {
     Vec2 vA = {A->x, A->y};
     Vec2 vD = {D->x, D->y};
 
     if (point_eq(vA, E) || point_eq(vD, E)) return true;
     if (!point_eq(vA, E) && !point_eq(vD, E) && ring_contains_point(ring, E)) return true;
 
+    if (grid) {
+        // Use spatial index: query segments near both new edges
+        std::vector<Segment> candidates;
+        double ax0 = std::min({vA.x, E.x, vD.x}), ay0 = std::min({vA.y, E.y, vD.y});
+        double ax1 = std::max({vA.x, E.x, vD.x}), ay1 = std::max({vA.y, E.y, vD.y});
+        grid->query(ax0, ay0, ax1, ay1, candidates);
+
+        std::unordered_set<Vertex*> seen;
+        for (const auto& seg : candidates) {
+            Vertex* u = seg.start;
+            if (!seen.insert(u).second) continue;
+            if (u == A || u == B || u == C) continue;
+            Vertex* w = u->next;
+            if (w == B || w == C) continue;
+            if (seg.ring_id != ring.ring_id) continue;
+            Vec2 pu = {u->x, u->y};
+            Vec2 pw = {w->x, w->y};
+            if (segments_intersect_nontrivial(vA, E, pu, pw, true)) return true;
+            if (segments_intersect_nontrivial(E, vD, pu, pw, true)) return true;
+        }
+        return false;
+    }
+
+    // Fallback: O(n) scan
     const Vertex* u = ring.head;
     do {
         const Vertex* w = u->next;
@@ -311,13 +337,42 @@ bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* B, Vertex
     return false;
 }
 
-bool collapse_causes_cross_ring_intersection(const Polygon& poly, int ring_id, Vertex* A, Vertex* B, Vertex* C, Vertex* D, Vec2 E) {
+bool collapse_causes_cross_ring_intersection(const Polygon& poly, int ring_id, Vertex* A, Vertex* B, Vertex* C, Vertex* D, Vec2 E, const SpatialGrid* grid) {
     const Ring& ring = *poly.rings[ring_id];
-    if (collapse_causes_intersection(ring, A, B, C, D, E)) return true;
+    if (collapse_causes_intersection(ring, A, B, C, D, E, grid)) return true;
 
     Vec2 vA = {A->x, A->y};
     Vec2 vD = {D->x, D->y};
 
+    if (grid) {
+        // Use spatial index for cross-ring checks
+        for (size_t j = 0; j < poly.rings.size(); ++j) {
+            if (static_cast<int>(j) == ring_id) continue;
+            const Ring& other = *poly.rings[j];
+            if (!other.head || other.size < 2) continue;
+            if (ring_contains_point(other, E)) return true;
+        }
+
+        std::vector<Segment> candidates;
+        double ax0 = std::min({vA.x, E.x, vD.x}), ay0 = std::min({vA.y, E.y, vD.y});
+        double ax1 = std::max({vA.x, E.x, vD.x}), ay1 = std::max({vA.y, E.y, vD.y});
+        grid->query(ax0, ay0, ax1, ay1, candidates);
+
+        std::unordered_set<Vertex*> seen;
+        for (const auto& seg : candidates) {
+            if (seg.ring_id == ring_id) continue;
+            Vertex* u = seg.start;
+            if (!seen.insert(u).second) continue;
+            Vertex* w = u->next;
+            Vec2 pu = {u->x, u->y};
+            Vec2 pw = {w->x, w->y};
+            if (segments_intersect_nontrivial(vA, E, pu, pw, false)) return true;
+            if (segments_intersect_nontrivial(E, vD, pu, pw, false)) return true;
+        }
+        return false;
+    }
+
+    // Fallback: O(n) scan across all other rings
     for (size_t j = 0; j < poly.rings.size(); ++j) {
         if (static_cast<int>(j) == ring_id) continue;
         const Ring& other = *poly.rings[j];

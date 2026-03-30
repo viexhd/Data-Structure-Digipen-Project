@@ -1,5 +1,6 @@
 #include "apsc.hpp"
 #include "geometry.hpp"
+#include "spatial_grid.hpp"
 #include <queue>
 #include <vector>
 
@@ -50,6 +51,10 @@ double simplify(Polygon& poly, size_t target_n) {
     for (auto& ring : poly.rings)
         enqueue_ring(pq, *ring);
 
+    // Build spatial index for O(sqrt(n)) intersection queries
+    SpatialGrid grid;
+    grid.build(poly);
+
     while (poly.total_vertices() > target_n && !pq.empty()) {
         Candidate c = pq.top();
         pq.pop();
@@ -60,11 +65,20 @@ double simplify(Polygon& poly, size_t target_n) {
         if (ring->size < 4) continue;
 
         Vec2 E{c.Ex, c.Ey};
-        if (collapse_causes_cross_ring_intersection(poly, c.ring_id, c.A, c.B, c.C, c.D, E)) continue;
+        if (collapse_causes_cross_ring_intersection(poly, c.ring_id, c.A, c.B, c.C, c.D, E, &grid)) continue;
+
+        // Update grid: remove old edges before modifying the ring
+        grid.remove(c.A);  // old edge A->B
+        grid.remove(c.B);  // old edge B->C
+        grid.remove(c.C);  // old edge C->D
 
         ring->remove(c.B);
         ring->remove(c.C);
         Vertex* E_vtx = ring->insert_after(c.A, c.Ex, c.Ey);
+
+        // Update grid: insert new edges after ring modification
+        grid.insert(c.A, ring->ring_id);    // new edge A->E
+        grid.insert(E_vtx, ring->ring_id);  // new edge E->D
 
         total_displacement += c.displacement;
 

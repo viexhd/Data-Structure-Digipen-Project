@@ -64,11 +64,25 @@ Optional: [CGAL](https://www.cgal.org/) or [Boost.Geometry](https://www.boost.or
 
 ## Test Results
 
-| Test case | Input vertices | Target | Output vertices | Area preserved | Topology valid |
+| Test case | Input vertices | Holes | Target | Area preserved | Topology valid |
 |---|---|---|---|---|---|
-| example.csv | 11 | 8 | 8 | ✓ | ✓ |
+| input_rectangle_with_two_holes.csv | 12 | 2 | 7 | Yes | Yes |
+| input_cushion_with_hexagonal_hole.csv | 22 | 1 | 13 | Yes | Yes |
+| input_blob_with_two_holes.csv | 36 | 2 | 17 | Yes | Yes |
+| input_wavy_with_three_holes.csv | 43 | 3 | 21 | Yes | Yes |
+| input_lake_with_two_islands.csv | 81 | 2 | 17 | Yes | Yes |
+| input_original_01.csv | ~200 | 0 | 99 | Yes | Yes |
+| input_original_02.csv | ~200 | 0 | 99 | Yes | Yes |
+| input_original_03.csv | ~200 | 0 | 99 | Yes | Yes |
+| input_original_04.csv | ~200 | 0 | 99 | Yes | Yes |
+| input_original_05.csv | ~200 | 0 | 99 | Yes | Yes |
+| input_original_06.csv | ~200 | 0 | 99 | Yes | Yes |
+| input_original_07.csv | ~200 | 0 | 99 | Yes | Yes |
+| input_original_08.csv | ~200 | 0 | 99 | Yes | Yes |
+| input_original_09.csv | ~200 | 0 | 99 | Yes | Yes |
+| input_original_10.csv | ~200 | 0 | 99 | Yes | Yes |
 
-*(Update this table as more test cases are run.)*
+All 15 test cases pass with matching expected output (area preserved, topology valid).
 
 ## Algorithm
 
@@ -83,4 +97,10 @@ Implements the **Area-Preserving Segment Collapse (APSC)** algorithm from:
 - **Doubly-linked circular list** per ring — O(1) vertex removal and insertion
 - **Min-heap priority queue** — always collapse the lowest-displacement candidate next
 - **Lazy deletion** — stale candidates (whose vertices were already removed) are discarded on pop
-- **Spatial index** *(planned)* — R-tree or segment tree for O(log n) intersection checks
+- **Uniform grid spatial index** — grid-based spatial partitioning for O(sqrt(n)) average-case intersection checks, replacing the naive O(n) full-ring scan
+
+### Performance
+
+The spatial grid index divides the polygon's bounding box into sqrt(n) x sqrt(n) cells. Each intersection query only checks segments in overlapping cells, reducing per-collapse cost from O(n) to O(sqrt(n)) average-case.
+
+Timing output is printed to stderr during execution (e.g., `Simplification: 99 vertices, 12.3 ms`).
