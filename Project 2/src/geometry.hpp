@@ -38,7 +38,15 @@ double areal_displacement(Vec2 A, Vec2 B, Vec2 C, Vec2 D, Vec2 E);
 // (share an interior point, excluding shared endpoints).
 bool segments_intersect(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4);
 
+bool segments_intersect_nontrivial(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, bool ignore_shared_endpoints);
+
 // Returns true if inserting E between A and D (replacing B and C) would cause
 // any edge in the ring to cross either new edge A→E or E→D.
 // This is an O(n) scan.  Replace with a spatial index for large inputs (Person 3).
-bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* D, Vec2 E);
+bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* B, Vertex* C, Vertex* D, Vec2 E);
+
+struct Polygon;
+bool collapse_causes_cross_ring_intersection(const Polygon& poly, int ring_id, Vertex* A, Vertex* B, Vertex* C, Vertex* D, Vec2 E);
+
+bool polygon_has_any_edge_intersections(const Polygon& poly);
+void assert_polygon_topology_valid(const Polygon& poly);

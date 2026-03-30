@@ -1,4 +1,5 @@
 #include "csv_io.hpp"
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <iostream>

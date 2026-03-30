@@ -1,7 +1,9 @@
 #include "geometry.hpp"
+#include "polygon.hpp"
 #include <cassert>
 #include <cmath>
 #include <algorithm>
+#include <vector>
 
 // ---- Area ------------------------------------------------------------------
 
@@ -17,13 +19,6 @@ double signed_area(const Ring& ring) {
 }
 
 // ---- Internal helpers ------------------------------------------------------
-
-// Signed cross product of vectors (D-A) and (P-A).
-// Positive => P is to the LEFT of the directed line A→D.
-// Negative => P is to the RIGHT.
-static double cross_AD_AP(Vec2 A, Vec2 D, Vec2 P) {
-    return (D.x - A.x) * (P.y - A.y) - (D.y - A.y) * (P.x - A.x);
-}
 
 // Intersection of the line  a*x + b*y + c = 0  with the infinite line through P1 and P2.
 // Returns the intersection point. If lines are parallel, projects the midpoint of P1P2
@@ -89,36 +84,14 @@ Vec2 compute_E(Vec2 A, Vec2 B, Vec2 C, Vec2 D) {
         return {(A.x + D.x) * 0.5, (A.y + D.y) * 0.5};
     }
 
-    // --- Signed cross products (proportional to perpendicular distance) ---
-    double crossB = cross_AD_AP(A, D, B);   // > 0 => B left of AD
-    double crossC = cross_AD_AP(A, D, C);   // > 0 => C left of AD
-
-    bool   same_side = (crossB * crossC >= 0.0);
-    bool   use_AB;   // true => intersect E* with line AB; false => with line CD
-
-    if (same_side) {
-        // Compare distances (|cross| is proportional to distance from AD)
-        use_AB = (std::abs(crossB) >= std::abs(crossC));
-    } else {
-        // Opposite sides: compare side of B with side of E* relative to AD.
-        // Pick any point on E* to determine its side.
-        Vec2 Estar_pt;
-        if (std::abs(b) >= std::abs(a)) {
-            // b != 0: set x=0, y = -c/b
-            Estar_pt = {0.0, -c / b};
-        } else {
-            // a != 0: set y=0, x = -c/a
-            Estar_pt = {-c / a, 0.0};
-        }
-        double crossEstar = cross_AD_AP(A, D, Estar_pt);
-        use_AB = ((crossB >= 0.0) == (crossEstar >= 0.0));
-    }
-
-    if (use_AB) {
-        return intersect_Estar_with_line(a, b, c, A, B);
-    } else {
-        return intersect_Estar_with_line(a, b, c, C, D);
-    }
+    Vec2 Eab = intersect_Estar_with_line(a, b, c, A, B);
+    Vec2 Ecd = intersect_Estar_with_line(a, b, c, C, D);
+    double dab = areal_displacement(A, B, C, D, Eab);
+    double dcd = areal_displacement(A, B, C, D, Ecd);
+    const double eps = 1e-12;
+    if (dab < dcd - eps) return Eab;
+    if (dcd < dab - eps) return Ecd;
+    return Eab;
 }
 
 // ---- areal_displacement ----------------------------------------------------
@@ -127,6 +100,18 @@ Vec2 compute_E(Vec2 A, Vec2 B, Vec2 C, Vec2 D) {
 static double tri_area(Vec2 P1, Vec2 P2, Vec2 P3) {
     return 0.5 * ((P2.x - P1.x) * (P3.y - P1.y)
                 - (P3.x - P1.x) * (P2.y - P1.y));
+}
+
+static double poly_area(const std::vector<Vec2>& pts) {
+    if (pts.size() < 3) return 0.0;
+    long double acc = 0.0L;
+    for (size_t i = 0, n = pts.size(); i < n; ++i) {
+        const Vec2& a = pts[i];
+        const Vec2& b = pts[(i + 1) % n];
+        acc += static_cast<long double>(a.x) * static_cast<long double>(b.y)
+             - static_cast<long double>(b.x) * static_cast<long double>(a.y);
+    }
+    return std::abs(static_cast<double>(acc * 0.5L));
 }
 
 // Compute the parameter t in [0,1] where segment P1→P2 intersects segment P3→P4.
@@ -161,29 +146,56 @@ static bool seg_intersect_params(Vec2 P1, Vec2 P2, Vec2 P3, Vec2 P4,
 double areal_displacement(Vec2 A, Vec2 B, Vec2 C, Vec2 D, Vec2 E) {
     double t, s;
 
-    // Case 1: new edge E→D crosses old inner edge B→C
+    const double epsCross = 1e-10;
+
     if (seg_intersect_params(E, D, B, C, t, s)) {
-        Vec2 I = {E.x + t * (D.x - E.x), E.y + t * (D.y - E.y)};
-        double a1 = tri_area(A, B, I) + tri_area(A, I, E);
-        double a2 = tri_area(I, C, D) + tri_area(I, D, E);
-        return std::abs(a1) + std::abs(a2);
+        if (!(t <= epsCross || t >= 1.0 - epsCross || s <= epsCross || s >= 1.0 - epsCross)) {
+            Vec2 I = {E.x + t * (D.x - E.x), E.y + t * (D.y - E.y)};
+            double a1 = tri_area(A, B, I) + tri_area(A, I, E);
+            double a2 = tri_area(I, C, D) + tri_area(I, D, E);
+            return std::abs(a1) + std::abs(a2);
+        }
     }
 
-    // Case 2: new edge A→E crosses old inner edge B→C
     if (seg_intersect_params(A, E, B, C, t, s)) {
-        Vec2 I = {A.x + t * (E.x - A.x), A.y + t * (E.y - A.y)};
-        double a1 = std::abs(tri_area(A, B, I));
-        double a2 = std::abs(tri_area(I, C, D) + tri_area(I, D, E));
-        return a1 + a2;
+        if (!(t <= epsCross || t >= 1.0 - epsCross || s <= epsCross || s >= 1.0 - epsCross)) {
+            Vec2 I = {A.x + t * (E.x - A.x), A.y + t * (E.y - A.y)};
+            double a1 = std::abs(tri_area(A, B, I));
+            double a2 = std::abs(tri_area(I, C, D) + tri_area(I, D, E));
+            return a1 + a2;
+        }
     }
 
-    // No crossing with B→C: polygon A,B,C,D,E is simple — use shoelace directly.
+    if (seg_intersect_params(E, D, A, B, t, s)) {
+        if (!(t <= epsCross || t >= 1.0 - epsCross || s <= epsCross || s >= 1.0 - epsCross)) {
+            Vec2 I = {E.x + t * (D.x - E.x), E.y + t * (D.y - E.y)};
+            double a1 = std::abs(tri_area(A, I, E));
+            double a2 = poly_area({I, B, C, D, E});
+            return a1 + a2;
+        }
+    }
+
+    if (seg_intersect_params(A, E, C, D, t, s)) {
+        if (!(t <= epsCross || t >= 1.0 - epsCross || s <= epsCross || s >= 1.0 - epsCross)) {
+            Vec2 J = {A.x + t * (E.x - A.x), A.y + t * (E.y - A.y)};
+            double a1 = std::abs(tri_area(J, D, E));
+            double a2 = poly_area({A, B, C, J, E});
+            return a1 + a2;
+        }
+    }
+
     double area = (A.x * B.y - B.x * A.y)
                 + (B.x * C.y - C.x * B.y)
                 + (C.x * D.y - D.x * C.y)
                 + (D.x * E.y - E.x * D.y)
                 + (E.x * A.y - A.x * E.y);
-    return std::abs(area) * 0.5;
+    double shoelace_disp = std::abs(area) * 0.5;
+    double alt1 = std::abs(tri_area(A, B, C) + tri_area(A, C, E))
+                + std::abs(tri_area(C, D, E));
+    double alt2 = std::abs(tri_area(A, B, E))
+                + std::abs(tri_area(B, C, D) + tri_area(B, D, E));
+    double alt3 = std::abs(tri_area(A, B, E)) + std::abs(tri_area(E, C, D));
+    return std::max(std::max(shoelace_disp, alt1), std::max(alt2, alt3));
 }
 
 // ---- Intersection checks ---------------------------------------------------
@@ -205,22 +217,182 @@ bool segments_intersect(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4) {
     return false;
 }
 
-bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* D, Vec2 E) {
+static bool point_eq(Vec2 a, Vec2 b) {
+    const double eps = 1e-12;
+    return std::abs(a.x - b.x) <= eps && std::abs(a.y - b.y) <= eps;
+}
+
+static int orient_sign(Vec2 a, Vec2 b, Vec2 c) {
+    long double abx = static_cast<long double>(b.x) - static_cast<long double>(a.x);
+    long double aby = static_cast<long double>(b.y) - static_cast<long double>(a.y);
+    long double acx = static_cast<long double>(c.x) - static_cast<long double>(a.x);
+    long double acy = static_cast<long double>(c.y) - static_cast<long double>(a.y);
+    long double v   = abx * acy - aby * acx;
+    long double tol = 1e-12L * (fabsl(abx) + fabsl(aby) + fabsl(acx) + fabsl(acy) + 1.0L);
+    if (fabsl(v) <= tol) return 0;
+    return (v > 0) ? 1 : -1;
+}
+
+static bool on_segment(Vec2 a, Vec2 b, Vec2 p) {
+    const double eps = 1e-12;
+    if (orient_sign(a, b, p) != 0) return false;
+    return (p.x >= std::min(a.x, b.x) - eps && p.x <= std::max(a.x, b.x) + eps &&
+            p.y >= std::min(a.y, b.y) - eps && p.y <= std::max(a.y, b.y) + eps);
+}
+
+static bool collinear_overlap_nontrivial(Vec2 a, Vec2 b, Vec2 c, Vec2 d) {
+    if (orient_sign(a, b, c) != 0 || orient_sign(a, b, d) != 0) return false;
+    const double eps = 1e-12;
+    const double abx = std::abs(b.x - a.x);
+    const double aby = std::abs(b.y - a.y);
+    auto proj = [&](Vec2 p) { return (abx >= aby) ? p.x : p.y; };
+    double a0 = proj(a), a1 = proj(b);
+    double c0 = proj(c), c1 = proj(d);
+    if (a0 > a1) std::swap(a0, a1);
+    if (c0 > c1) std::swap(c0, c1);
+    double overlap = std::min(a1, c1) - std::max(a0, c0);
+    return overlap > eps;
+}
+
+bool segments_intersect_nontrivial(Vec2 p1, Vec2 p2, Vec2 p3, Vec2 p4, bool ignore_shared_endpoints) {
+    const bool shared_endpoint =
+        point_eq(p1, p3) || point_eq(p1, p4) || point_eq(p2, p3) || point_eq(p2, p4);
+
+    if (collinear_overlap_nontrivial(p1, p2, p3, p4)) return true;
+
+    int o1 = orient_sign(p1, p2, p3);
+    int o2 = orient_sign(p1, p2, p4);
+    int o3 = orient_sign(p3, p4, p1);
+    int o4 = orient_sign(p3, p4, p2);
+
+    if (o1 * o2 < 0 && o3 * o4 < 0) return true;
+
+    bool intersects =
+        (o1 == 0 && on_segment(p1, p2, p3)) ||
+        (o2 == 0 && on_segment(p1, p2, p4)) ||
+        (o3 == 0 && on_segment(p3, p4, p1)) ||
+        (o4 == 0 && on_segment(p3, p4, p2));
+
+    if (!intersects) return false;
+    if (ignore_shared_endpoints && shared_endpoint) return false;
+    return true;
+}
+
+static bool ring_contains_point(const Ring& ring, Vec2 p) {
+    if (!ring.head || ring.size == 0) return false;
+    const Vertex* v = ring.head;
+    do {
+        if (point_eq({v->x, v->y}, p)) return true;
+        v = v->next;
+    } while (v != ring.head);
+    return false;
+}
+
+bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* B, Vertex* C, Vertex* D, Vec2 E) {
     Vec2 vA = {A->x, A->y};
     Vec2 vD = {D->x, D->y};
+
+    if (point_eq(vA, E) || point_eq(vD, E)) return true;
+    if (!point_eq(vA, E) && !point_eq(vD, E) && ring_contains_point(ring, E)) return true;
 
     const Vertex* u = ring.head;
     do {
         const Vertex* w = u->next;
-        if (u == A || u == D || w == A || w == D) {
+        if (u == B || u == C || w == B || w == C) {
             u = w;
             continue;
         }
         Vec2 pu = {u->x, u->y};
         Vec2 pw = {w->x, w->y};
-        if (segments_intersect(vA, E, pu, pw)) return true;
-        if (segments_intersect(E, vD, pu, pw)) return true;
+        if (segments_intersect_nontrivial(vA, E, pu, pw, true)) return true;
+        if (segments_intersect_nontrivial(E, vD, pu, pw, true)) return true;
         u = w;
     } while (u != ring.head);
     return false;
+}
+
+bool collapse_causes_cross_ring_intersection(const Polygon& poly, int ring_id, Vertex* A, Vertex* B, Vertex* C, Vertex* D, Vec2 E) {
+    const Ring& ring = *poly.rings[ring_id];
+    if (collapse_causes_intersection(ring, A, B, C, D, E)) return true;
+
+    Vec2 vA = {A->x, A->y};
+    Vec2 vD = {D->x, D->y};
+
+    for (size_t j = 0; j < poly.rings.size(); ++j) {
+        if (static_cast<int>(j) == ring_id) continue;
+        const Ring& other = *poly.rings[j];
+        if (!other.head || other.size < 2) continue;
+        if (ring_contains_point(other, E)) return true;
+        const Vertex* u = other.head;
+        do {
+            const Vertex* w = u->next;
+            Vec2 pu = {u->x, u->y};
+            Vec2 pw = {w->x, w->y};
+            if (segments_intersect_nontrivial(vA, E, pu, pw, false)) return true;
+            if (segments_intersect_nontrivial(E, vD, pu, pw, false)) return true;
+            u = w;
+        } while (u != other.head);
+    }
+    return false;
+}
+
+static bool ring_has_any_edge_intersections(const Ring& ring) {
+    if (!ring.head || ring.size < 3) return false;
+    std::vector<Vec2> pts;
+    pts.reserve(ring.size);
+    const Vertex* v = ring.head;
+    do {
+        pts.push_back({v->x, v->y});
+        v = v->next;
+    } while (v != ring.head);
+
+    const size_t n = pts.size();
+    for (size_t i = 0; i < n; ++i) {
+        Vec2 a = pts[i];
+        Vec2 b = pts[(i + 1) % n];
+        if (point_eq(a, b)) return true;
+        for (size_t j = i + 1; j < n; ++j) {
+            if (j == i) continue;
+            if ((i + 1) % n == j) continue;
+            if ((j + 1) % n == i) continue;
+            Vec2 c = pts[j];
+            Vec2 d = pts[(j + 1) % n];
+            if (segments_intersect_nontrivial(a, b, c, d, false)) return true;
+        }
+    }
+    return false;
+}
+
+bool polygon_has_any_edge_intersections(const Polygon& poly) {
+    for (const auto& ringPtr : poly.rings) {
+        if (ring_has_any_edge_intersections(*ringPtr)) return true;
+    }
+    for (size_t i = 0; i < poly.rings.size(); ++i) {
+        const Ring& r1 = *poly.rings[i];
+        if (!r1.head || r1.size < 2) continue;
+        const Vertex* a = r1.head;
+        do {
+            const Vertex* b = a->next;
+            Vec2 p1 = {a->x, a->y};
+            Vec2 p2 = {b->x, b->y};
+            for (size_t j = i + 1; j < poly.rings.size(); ++j) {
+                const Ring& r2 = *poly.rings[j];
+                if (!r2.head || r2.size < 2) continue;
+                const Vertex* c = r2.head;
+                do {
+                    const Vertex* d = c->next;
+                    Vec2 q1 = {c->x, c->y};
+                    Vec2 q2 = {d->x, d->y};
+                    if (segments_intersect_nontrivial(p1, p2, q1, q2, false)) return true;
+                    c = d;
+                } while (c != r2.head);
+            }
+            a = b;
+        } while (a != r1.head);
+    }
+    return false;
+}
+
+void assert_polygon_topology_valid(const Polygon& poly) {
+    assert(!polygon_has_any_edge_intersections(poly));
 }

@@ -1,6 +1,7 @@
 #include "apsc.hpp"
 #include "geometry.hpp"
 #include <queue>
+#include <vector>
 
 // ---- Helpers ---------------------------------------------------------------
 
@@ -44,39 +45,33 @@ double simplify(Polygon& poly, size_t target_n) {
                                         std::vector<Candidate>,
                                         std::greater<Candidate>>;
     MinHeap pq;
+    double total_displacement = 0.0;
 
     for (auto& ring : poly.rings)
         enqueue_ring(pq, *ring);
-
-    double total_displacement = 0.0;
 
     while (poly.total_vertices() > target_n && !pq.empty()) {
         Candidate c = pq.top();
         pq.pop();
 
-        // Discard stale entries (lazy deletion)
         if (!is_valid(c)) continue;
 
         Ring* ring = poly.rings[c.ring_id].get();
-
-        // A ring must keep >= 3 vertices
-        if (ring->size <= 4) continue;
+        if (ring->size < 4) continue;
 
         Vec2 E{c.Ex, c.Ey};
+        if (collapse_causes_cross_ring_intersection(poly, c.ring_id, c.A, c.B, c.C, c.D, E)) continue;
 
-        // Topology check: would the two new edges intersect any existing edge?
-        // TODO (Person 2): extend this to also check against other rings.
-        if (collapse_causes_intersection(*ring, c.A, c.D, E)) continue;
-
-        // Perform the collapse: unlink B and C, insert E between A and D.
-        ring->remove(c.B);   // sets B->removed = true
-        ring->remove(c.C);   // sets C->removed = true
+        ring->remove(c.B);
+        ring->remove(c.C);
         Vertex* E_vtx = ring->insert_after(c.A, c.Ex, c.Ey);
 
         total_displacement += c.displacement;
 
-        // Recompute candidates for the updated neighbourhood of E_vtx.
-        // Walk back 3 steps to cover all new 4-tuples that include E_vtx.
+#ifndef NDEBUG
+        assert_polygon_topology_valid(poly);
+#endif
+
         if (ring->size >= 4) {
             Vertex* start = E_vtx->prev->prev->prev;
             for (int i = 0; i < 4; ++i) {
@@ -88,12 +83,8 @@ double simplify(Polygon& poly, size_t target_n) {
                 start = start->next;
             }
         }
-
-        // Periodically free tombstoned vertices to avoid unbounded memory growth.
-        ring->flush_garbage();
     }
 
-    // Final cleanup
     for (auto& ring : poly.rings)
         ring->flush_garbage();
 
