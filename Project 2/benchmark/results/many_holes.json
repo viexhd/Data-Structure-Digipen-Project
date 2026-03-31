@@ -1,0 +1,47 @@
+[
+  {
+    "k_holes": 1,
+    "n": 324,
+    "target": 162,
+    "internal_ms": 0.245652,
+    "peak_rss_kb": 3840,
+    "displacement": 6.196256,
+    "error": null
+  },
+  {
+    "k_holes": 2,
+    "n": 348,
+    "target": 174,
+    "internal_ms": 0.267961,
+    "peak_rss_kb": 3840,
+    "displacement": 7.704534,
+    "error": null
+  },
+  {
+    "k_holes": 5,
+    "n": 420,
+    "target": 210,
+    "internal_ms": 0.333547,
+    "peak_rss_kb": 3840,
+    "displacement": 15.2464,
+    "error": null
+  },
+  {
+    "k_holes": 10,
+    "n": 540,
+    "target": 270,
+    "internal_ms": 0.476871,
+    "peak_rss_kb": 3840,
+    "displacement": 32.47243,
+    "error": null
+  },
+  {
+    "k_holes": 20,
+    "n": 780,
+    "target": 390,
+    "internal_ms": 0.78917,
+    "peak_rss_kb": 3840,
+    "displacement": 68.5124,
+    "error": null
+  }
+]
