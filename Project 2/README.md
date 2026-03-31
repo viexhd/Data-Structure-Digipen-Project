@@ -140,3 +140,90 @@ All benchmarks run on WSL2 (Ubuntu 24.04), single-threaded, compiled with `-O2 -
 **Grid-accelerated:** The grid reduces per-collapse cost to O(sqrt(n)) average-case, yielding O(n * sqrt(n)) = O(n^1.5) total. The grid uses epoch-based deduplication and early-exit callbacks, avoiding per-query heap allocations. At 50k vertices the grid is 4.5x faster than naive; at 100k it is ~2.2x faster. The speedup decreases at larger scales due to memory overhead and cache pressure from the grid's cell arrays.
 
 **Memory:** The grid uses O(n) additional memory for cell arrays (sqrt(n) x sqrt(n) cells). At small inputs (1k-10k) the overhead is modest (3.8-16.7 MB). At 50k+ the grid's memory dominates (237 MB at 50k, 840 MB at 100k) due to cell vector overhead and priority queue growth from lazy deletion. The naive version stays under 34 MB at all sizes.
+
+## Benchmarking
+
+The `benchmark/` directory contains a self-contained benchmarking suite that generates synthetic test datasets, measures wall time and peak RSS, produces the three required plots, and fits scaling curves.
+
+### Prerequisites
+
+```bash
+pip install numpy matplotlib scipy psutil
+```
+
+### Workflow
+
+```bash
+# 1. Generate synthetic test datasets
+python benchmark/gen_datasets.py
+
+# 2. Run all experiments (5 reps each, uses WSL automatically on Windows)
+python benchmark/run_benchmarks.py --reps 5
+
+# 3. Produce figures and fit scaling curves
+python benchmark/plot_results.py
+```
+
+> **Windows note:** The binary must be compiled inside WSL before running the harness.
+> If the binary was replaced (e.g. after `git pull`), rebuild first:
+> ```bash
+> wsl -e bash -c "cd '/mnt/c/<path-to-project>' && make clean && make"
+> ```
+
+Results are written to `benchmark/results/` (JSON) and `benchmark/figures/` (PDF + PNG).
+
+### Synthetic Datasets
+
+| Category | Description | n range |
+|----------|-------------|---------|
+| `large_n/` | Smooth exterior-only polygon (Fourier-perturbed circle) | 50 – 12 800 |
+| `many_holes/` | Fixed exterior + k = 1, 2, 5, 10, 20 interior holes | 324 – 780 total |
+| `narrow_gap/` | Concentric rings, gap ∈ {5, 2, 1, 0.5, 0.1} | 200 |
+| `degenerate/` | Comb, zigzag, elongated (50:1 aspect), nearly-collinear | 54 – 2 000 |
+
+### Measured Scaling (grid-accelerated, WSL2 Ubuntu 22.04, GCC 11.4, -O2, target = n/2)
+
+Time is the median internal wall time over 5 runs; memory is peak RSS from `/usr/bin/time -v`.
+
+| n | Time (ms) | Peak RSS (KiB) |
+|---|-----------|----------------|
+| 50 | 0.044 | 3 584 |
+| 100 | 0.081 | 3 584 |
+| 200 | 0.153 | 3 840 |
+| 400 | 0.297 | 3 840 |
+| 800 | 0.670 | 3 840 |
+| 1 600 | 1.426 | 4 096 |
+| 3 200 | 3.345 | 4 608 |
+| 6 400 | 8.020 | 5 120 |
+| 12 800 | 21.402 | 7 976 |
+
+Curve-fit R² (scipy `curve_fit` over the above data):
+
+| Model | Time R² | Memory R² |
+|-------|---------|-----------|
+| O(n sqrt(n)) | **0.9989** ← best | **0.9864** ← best |
+| O(n log n) | 0.9911 | 0.9814 |
+| O(n) | 0.9816 | 0.9742 |
+| O(n^2) | 0.9812 | 0.9701 |
+
+Both time and memory fit **O(n sqrt(n))** best, consistent with O(n) collapses × O(sqrt(n)) spatial-grid queries each.
+
+### Areal Displacement vs. Target Count
+
+For a fixed 1 600-vertex polygon, varying the target:
+
+| Target (% of n) | Areal displacement |
+|---|---|
+| 90% (1 440 v) | 1.79e-02 |
+| 80% (1 280 v) | 4.02e-02 |
+| 70% (1 120 v) | 6.77e-02 |
+| 60% (960 v) | 9.94e-02 |
+| 50% (800 v) | 1.78e-01 |
+| 40% (640 v) | 2.93e-01 |
+| 30% (480 v) | 5.36e-01 |
+| 20% (320 v) | 9.76e-01 |
+| 10% (160 v) | 4.86e+00 |
+
+Displacement rises steeply below ~40% of the original count. Above that threshold simplification is nearly lossless. Area is preserved exactly in all cases.
+
+The filled-in experimental evaluation write-up is at `benchmark/eval_section.md`.
