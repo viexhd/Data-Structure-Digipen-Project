@@ -51,8 +51,10 @@ double simplify(Polygon& poly, size_t target_n) {
     for (auto& ring : poly.rings)
         enqueue_ring(pq, *ring);
 
+#ifndef USE_NAIVE
     SpatialGrid grid;
     grid.build(poly);
+#endif
 
     while (poly.total_vertices() > target_n && !pq.empty()) {
         Candidate c = pq.top();
@@ -64,18 +66,26 @@ double simplify(Polygon& poly, size_t target_n) {
         if (ring->size < 4) continue;
 
         Vec2 E{c.Ex, c.Ey};
+#ifndef USE_NAIVE
         if (collapse_causes_cross_ring_intersection(poly, c.ring_id, c.A, c.B, c.C, c.D, E, &grid)) continue;
+#else
+        if (collapse_causes_cross_ring_intersection(poly, c.ring_id, c.A, c.B, c.C, c.D, E)) continue;
+#endif
 
+#ifndef USE_NAIVE
         grid.remove(c.A);
         grid.remove(c.B);
         grid.remove(c.C);
+#endif
 
         ring->remove(c.B);
         ring->remove(c.C);
         Vertex* E_vtx = ring->insert_after(c.A, c.Ex, c.Ey);
 
+#ifndef USE_NAIVE
         grid.insert(c.A, ring->ring_id);
         grid.insert(E_vtx, ring->ring_id);
+#endif
 
         total_displacement += c.displacement;
 

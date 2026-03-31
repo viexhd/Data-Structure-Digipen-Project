@@ -8,6 +8,23 @@
 #include <fstream>
 #include <sstream>
 #include <chrono>
+#include <string>
+
+// Read peak RSS (VmHWM) from /proc/self/status on Linux/WSL.
+// Returns peak memory in KB, or -1 if unavailable.
+static long get_peak_rss_kb() {
+    std::ifstream f("/proc/self/status");
+    if (!f.is_open()) return -1;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.rfind("VmHWM:", 0) == 0) {
+            long kb = 0;
+            std::sscanf(line.c_str(), "VmHWM: %ld", &kb);
+            return kb;
+        }
+    }
+    return -1;
+}
 
 int main(int argc, char* argv[]) {
     if (argc != 3) {
@@ -72,8 +89,11 @@ int main(int argc, char* argv[]) {
         total_displacement = simplify(poly, target_n);
     auto t_end = std::chrono::high_resolution_clock::now();
     double elapsed_ms = std::chrono::duration<double, std::milli>(t_end - t_start).count();
+    long peak_kb = get_peak_rss_kb();
     std::cerr << "Simplification: " << poly.total_vertices() << " vertices, "
-              << elapsed_ms << " ms\n";
+              << elapsed_ms << " ms";
+    if (peak_kb > 0) std::cerr << ", peak RSS: " << peak_kb << " KB";
+    std::cerr << "\n";
 
     // Compute output area
     double area_out = 0.0;
