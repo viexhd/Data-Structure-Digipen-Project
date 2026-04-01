@@ -21,13 +21,6 @@ double signed_area(const Ring& ring) {
 
 // ---- Internal helpers ------------------------------------------------------
 
-// Signed cross product of vectors (D-A) and (P-A).
-// Positive => P is to the LEFT of the directed line A→D.
-// Negative => P is to the RIGHT.
-static double cross_AD_AP(Vec2 A, Vec2 D, Vec2 P) {
-    return (D.x - A.x) * (P.y - A.y) - (D.y - A.y) * (P.x - A.x);
-}
-
 // Intersection of the line  a*x + b*y + c = 0  with the infinite line through P1 and P2.
 // Returns the intersection point. If lines are parallel, projects the midpoint of P1P2
 // onto E* (fallback — should rarely trigger for valid input).
@@ -92,28 +85,11 @@ Vec2 compute_E(Vec2 A, Vec2 B, Vec2 C, Vec2 D) {
         return {(A.x + D.x) * 0.5, (A.y + D.y) * 0.5};
     }
 
-    double crossB = cross_AD_AP(A, D, B);
-    double crossC = cross_AD_AP(A, D, C);
-
-    bool same_side = (crossB * crossC >= 0.0);
-    bool use_AB;
-
-    if (same_side) {
-        use_AB = (std::abs(crossB) >= std::abs(crossC));
-    } else {
-        Vec2 Estar_pt;
-        if (std::abs(b) >= std::abs(a)) {
-            Estar_pt = {0.0, -c / b};
-        } else {
-            Estar_pt = {-c / a, 0.0};
-        }
-        double crossEstar = cross_AD_AP(A, D, Estar_pt);
-        use_AB = ((crossB >= 0.0) == (crossEstar >= 0.0));
-    }
-
-    return use_AB
-        ? intersect_Estar_with_line(a, b, c, A, B)
-        : intersect_Estar_with_line(a, b, c, C, D);
+    Vec2 Eab = intersect_Estar_with_line(a, b, c, A, B);
+    Vec2 Ecd = intersect_Estar_with_line(a, b, c, C, D);
+    double dab = areal_displacement(A, B, C, D, Eab);
+    double dcd = areal_displacement(A, B, C, D, Ecd);
+    return (dab <= dcd) ? Eab : Ecd;
 }
 
 // ---- areal_displacement ----------------------------------------------------
@@ -342,7 +318,6 @@ bool collapse_causes_intersection(const Ring& ring, Vertex* A, Vertex* B, Vertex
             if (rid != ring.ring_id) return true;
             Vertex* w = u->next;
             if (u == B || u == C || w == B || w == C) return true;
-            if (u == A || u == D || w == A || w == D) return true;
             Vec2 pu = {u->x, u->y};
             Vec2 pw = {w->x, w->y};
             if (segments_intersect_nontrivial(vA, E, pu, pw, true)) { found = true; return false; }

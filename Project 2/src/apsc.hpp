@@ -25,9 +25,9 @@ struct Candidate {
         auto id = [](Vertex* v){ return v ? v->original_id : -1; };
         int aA = id(A), aB = id(B), aC = id(C), aD = id(D);
         int bA = id(o.A), bB = id(o.B), bC = id(o.C), bD = id(o.D);
-        if (aA != bA) return aA > bA;
         if (aB != bB) return aB > bB;
         if (aC != bC) return aC > bC;
+        if (aA != bA) return aA > bA;
         if (aD != bD) return aD > bD;
         return A > o.A;
     }

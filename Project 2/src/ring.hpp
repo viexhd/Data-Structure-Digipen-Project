@@ -25,7 +25,7 @@ public:
     size_t size;   // current vertex count
     Vertex* head;  // arbitrary entry point into the circle
 
-    explicit Ring(int id) : ring_id(id), size(0), head(nullptr), garbage() {}
+    explicit Ring(int id) : ring_id(id), size(0), head(nullptr), next_generated_id(0), garbage() {}
     ~Ring() { flush_garbage(); clear(); }
 
     // Non-copyable (owns raw pointers)
@@ -35,6 +35,7 @@ public:
     // Append a vertex to the end of the ring (before head, maintaining circularity).
     void push_back(double x, double y, int vid = -1) {
         Vertex* v = new Vertex(x, y, vid);
+        if (vid >= 0 && vid + 1 > next_generated_id) next_generated_id = vid + 1;
         if (!head) {
             v->prev = v;
             v->next = v;
@@ -73,7 +74,7 @@ public:
     // Insert a new vertex with coordinates (x,y) between prev_v and prev_v->next.
     // Returns the newly inserted vertex.
     Vertex* insert_after(Vertex* prev_v, double x, double y) {
-        Vertex* v   = new Vertex(x, y);
+        Vertex* v   = new Vertex(x, y, next_generated_id++);
         Vertex* nxt = prev_v->next;
         prev_v->next = v;
         v->prev      = prev_v;
@@ -84,6 +85,7 @@ public:
     }
 
 private:
+    int next_generated_id;
     std::vector<Vertex*> garbage;  // tombstoned vertices awaiting deletion
 
     void clear() {
