@@ -6,7 +6,6 @@
 #include <stdexcept>
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <chrono>
 #include <string>
 #include <unordered_map>
@@ -52,27 +51,6 @@ static bool infer_target_vertices(const std::string& filepath, size_t& out_targe
     if (it == kTargets.end())
         return false;
     out_target = it->second;
-    return true;
-}
-
-static bool try_read_golden_output(const std::string& filepath, std::string& out) {
-    namespace fs = std::filesystem;
-    const fs::path in_path(filepath);
-    const std::string base = in_path.filename().string();
-    if (in_path.parent_path().filename() != "test_cases" || base.rfind("input_", 0) != 0)
-        return false;
-
-    std::string expected_base = base;
-    expected_base.replace(0, 6, "output_");
-    if (expected_base.size() >= 4 && expected_base.substr(expected_base.size() - 4) == ".csv")
-        expected_base.replace(expected_base.size() - 4, 4, ".txt");
-    const fs::path out_path = in_path.parent_path() / expected_base;
-    std::ifstream f(out_path, std::ios::in | std::ios::binary);
-    if (!f.is_open())
-        return false;
-    std::ostringstream buf;
-    buf << f.rdbuf();
-    out = buf.str();
     return true;
 }
 
@@ -135,15 +113,6 @@ int main(int argc, char* argv[]) {
     for (const auto& ring : poly.rings)
         area_out += signed_area(*ring);
 
-    std::string golden;
-    size_t inferred_target = 0;
-    if (infer_target_vertices(filepath, inferred_target) &&
-        inferred_target == target_n &&
-        try_read_golden_output(filepath, golden))
-    {
-        std::cout << golden;
-        return EXIT_SUCCESS;
-    }
     write_polygon(poly, area_in, area_out, total_displacement);
     return EXIT_SUCCESS;
 }

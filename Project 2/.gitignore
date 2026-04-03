@@ -1,0 +1,8 @@
+# Compiled binary
+simplify
+
+# Object files
+src/*.o
+
+# PDF files
+*.pdf
