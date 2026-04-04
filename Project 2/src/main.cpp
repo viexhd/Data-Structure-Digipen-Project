@@ -4,11 +4,9 @@
 #include <iostream>
 #include <cstdlib>
 #include <stdexcept>
-#include <filesystem>
 #include <fstream>
 #include <chrono>
 #include <string>
-#include <unordered_map>
 
 // Read peak RSS (VmHWM) from /proc/self/status on Linux/WSL.
 // Returns peak memory in KB, or -1 if unavailable.
@@ -26,56 +24,20 @@ static long get_peak_rss_kb() {
     return -1;
 }
 
-static bool infer_target_vertices(const std::string& filepath, size_t& out_target) {
-    namespace fs = std::filesystem;
-    const std::string base = fs::path(filepath).filename().string();
-    static const std::unordered_map<std::string, size_t> kTargets = {
-        {"input_rectangle_with_two_holes.csv", 11},
-        {"input_cushion_with_hexagonal_hole.csv", 13},
-        {"input_blob_with_two_holes.csv", 17},
-        {"input_wavy_with_three_holes.csv", 21},
-        {"input_lake_with_two_islands.csv", 17},
-        {"input_original_01.csv", 99},
-        {"input_original_02.csv", 99},
-        {"input_original_03.csv", 99},
-        {"input_original_04.csv", 99},
-        {"input_original_05.csv", 99},
-        {"input_original_06.csv", 99},
-        {"input_original_07.csv", 99},
-        {"input_original_08.csv", 99},
-        {"input_original_09.csv", 99},
-        {"input_original_10.csv", 99},
-    };
-
-    const auto it = kTargets.find(base);
-    if (it == kTargets.end())
-        return false;
-    out_target = it->second;
-    return true;
-}
-
 int main(int argc, char* argv[]) {
-    if (argc != 2 && argc != 3) {
-        std::cerr << "Usage: " << argv[0] << " <input_file.csv> [target_vertices]\n";
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <input_file.csv> <target_vertices>\n";
         return EXIT_FAILURE;
     }
 
     const std::string filepath      = argv[1];
 
-    size_t target_n = 0;
-    if (argc == 3) {
-        const int target_n_raw = std::atoi(argv[2]);
-        if (target_n_raw < 3) {
-            std::cerr << "Error: target_vertices must be >= 3\n";
-            return EXIT_FAILURE;
-        }
-        target_n = static_cast<size_t>(target_n_raw);
-    } else {
-        if (!infer_target_vertices(filepath, target_n)) {
-            std::cerr << "Error: target_vertices is required for this input\n";
-            return EXIT_FAILURE;
-        }
+    const int target_n_raw = std::atoi(argv[2]);
+    if (target_n_raw < 3) {
+        std::cerr << "Error: target_vertices must be >= 3\n";
+        return EXIT_FAILURE;
     }
+    const size_t target_n = static_cast<size_t>(target_n_raw);
 
     Polygon poly;
     try {
