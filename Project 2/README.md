@@ -6,16 +6,14 @@ CSD2183 Data Structures | DigiPen Institute of Technology
 
 Requires g++ with C++17 support (macOS, Linux, or WSL on Windows).
 
-> **Note:** All source files (`apsc.cpp`, `csv_io.cpp`, `geometry.cpp`, `main.cpp`,
-> `spatial_grid.cpp`) live in the **repository root**, not a `src/` subdirectory.
-> The Makefile must reflect this — if your Makefile sets `SRC_DIR := src`, update it
-> to `SRC_DIR := .` (or remove the variable and use `$(wildcard *.cpp)` directly).
+The source files (`apsc.cpp`, `csv_io.cpp`, `geometry.cpp`, `main.cpp`,
+`spatial_grid.cpp`) live in `src/`, and the Makefile builds everything in that folder.
 
 ```bash
 make
 ```
 
-This produces the `simplify` executable in the repository root.
+This produces the `simplify` executable in the `Project 2` folder.
 
 To clean build artifacts:
 
@@ -197,7 +195,7 @@ edge lengths.
 
 ## Benchmarking
 
-The benchmarking scripts are in the **repository root** (not a `benchmark/` subdirectory).
+The benchmarking scripts are in the `benchmark/` folder.
 They generate synthetic test datasets, measure wall time and peak RSS, produce the three
 required plots, and fit scaling curves.
 
@@ -211,13 +209,13 @@ pip install numpy matplotlib scipy psutil
 
 ```bash
 # 1. Generate synthetic test datasets
-python gen_datasets.py
+python benchmark/gen_datasets.py
 
 # 2. Run all experiments (5 reps each, uses WSL automatically on Windows)
-python run_benchmarks.py --reps 5
+python benchmark/run_benchmarks.py --reps 5
 
 # 3. Produce figures and fit scaling curves
-python plot_results.py
+python benchmark/plot_results.py
 ```
 
 > **Windows note:** The binary must be compiled inside WSL before running the harness.
@@ -226,7 +224,7 @@ python plot_results.py
 > wsl -e bash -c "cd '/mnt/c/<path-to-project>' && make clean && make"
 > ```
 
-Results are written to `results/` (JSON) and `figures/` (PDF + PNG).
+Results are written to `benchmark/results/` (JSON) and `benchmark/figures/` (PDF + PNG).
 
 ### Synthetic Datasets
 
@@ -287,4 +285,4 @@ For a fixed 1,600-vertex polygon, varying the target:
 Displacement rises steeply below ~40% of the original count. Above that threshold
 simplification is nearly lossless. Area is preserved exactly in all cases.
 
-The filled-in experimental evaluation write-up is at `eval_section.md`.
+The filled-in experimental evaluation write-up is at `benchmark/eval_section.md`.
